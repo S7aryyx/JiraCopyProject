@@ -9,11 +9,11 @@ namespace JiraCopyProject.Database
 {
     public class Database
     {
-        //private string connectionString = "Host=46.191.235.28;Port=5432;Database=jiracopy;Username=postgres;Password=Asdf=1234Asdf=1234";
+        private static string connectionString = "Host=46.191.235.28;Port=5432;Database=jiracopy;Username=postgres;Password=Asdf=1234Asdf=1234";
 
         public static NpgsqlConnection GetConnection()
         {
-            return new NpgsqlConnection("Host=46.191.235.28;Port=5432;Database=jiracopy;Username=postgres;Password=Asdf=1234Asdf=1234");
+            return new NpgsqlConnection(connectionString);
         }
 
         //Метод для работы с обычными процедурами (которые не возвращают результат)
