@@ -9,15 +9,15 @@ namespace JiraCopyProject.Database
 {
     public class Database
     {
-        private string connectionString = "Host=46.191.235.28;Port=5432;Database=jiracopy;Username=postgres;Password=Asdf=1234Asdf=1234";
+        //private string connectionString = "Host=46.191.235.28;Port=5432;Database=jiracopy;Username=postgres;Password=Asdf=1234Asdf=1234";
 
-        public NpgsqlConnection GetConnection()
+        public static NpgsqlConnection GetConnection()
         {
-            return new NpgsqlConnection(connectionString);
+            return new NpgsqlConnection("Host=46.191.235.28;Port=5432;Database=jiracopy;Username=postgres;Password=Asdf=1234Asdf=1234");
         }
 
         //Метод для работы с обычными процедурами (которые не возвращают результат)
-        public int ExecuteNonQuery(string sql, NpgsqlParameter[] parameters = null)
+        public static int ExecuteNonQuery(string sql, NpgsqlParameter[] parameters = null)
         {
             using (var conn = GetConnection())
             using (var cmd = new NpgsqlCommand(sql, conn))
@@ -32,7 +32,7 @@ namespace JiraCopyProject.Database
         }
         //Метод для работы с процедурами, которые возвращают результат (ответ)
 
-        public object ExecuteScalar(string sql, NpgsqlParameter[] parameters = null)
+        public static object ExecuteScalar(string sql, NpgsqlParameter[] parameters = null)
         {
             using (var conn = GetConnection())
             using (var cmd = new NpgsqlCommand(sql, conn))
@@ -48,7 +48,7 @@ namespace JiraCopyProject.Database
         }
         //Метод для работы с процедурами, которые возвращают результат в ВИДЕ ТАБЛИЦЫ)
 
-        public DataTable ExecuteQuery(string sql, NpgsqlParameter[] parameters = null)
+        public static DataTable ExecuteQuery(string sql, NpgsqlParameter[] parameters = null)
         {
             var dataTable = new DataTable(); //Создал пустую ВИРТУАЛЬНУЮ таблицу (в памяти C#)
             using (var conn = GetConnection())
