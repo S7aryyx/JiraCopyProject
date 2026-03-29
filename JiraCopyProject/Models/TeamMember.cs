@@ -1,4 +1,4 @@
-﻿namespace JiraConsole.Models
+﻿namespace JiraCopyProject.Models
 {
     public class TeamMember
     {
