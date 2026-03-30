@@ -115,20 +115,26 @@ namespace JiraCopyProject
             Console.WriteLine("\n" + msg);
         }
 
+        //Логическая функция для регистрации
         static int RegisterNewAccount(string login, string clearPassword, string email, string fullname, string position)
         {
+            //Шифруем пароль
             string hash = BCrypt.Net.BCrypt.HashPassword(clearPassword);
             string sql = "SELECT \"RegisterAccount\"(@login, @hash, @email, @fullname, @position)";
             var parameters = new[]
             {
+                //Кладём полученные (исходные данные) в параметры
                 new NpgsqlParameter("@login", login),
                 new NpgsqlParameter("@hash", hash),
                 new NpgsqlParameter("@email", email),
                 new NpgsqlParameter("@fullname", fullname),
                 new NpgsqlParameter("@position", string.IsNullOrEmpty(position) ? DBNull.Value : (object)position)
             };
+            //Создаю переменную результ , в которой будет лежать шаблонный ответ от процедуры (-1 , 0 , 1)
             object result = Database.Database.ExecuteScalar(sql, parameters);
             return result == null ? 0 : Convert.ToInt32(result);
+            //Пустой результат быть не может. При 0 и -1 -> Падаем в ошибку.
+            
         }
 
         static void Login()
@@ -163,34 +169,72 @@ namespace JiraCopyProject
         }
 
         static (int Id, string Role, int Status) AuthenticateAccount(string login, string plainPassword)
+        //Принимаете по желанию ШИФОРОВАННЫЙ или обычный пароль. Просто шифрацию проводите, либо в процессе отправки ответа.
+        //Либо непосредственно в функции, аунтефикации.
         {
+            //Запрос на поиск аккаунта (по логину) , который пользователь вписал
             string sql = "SELECT id, password_hash, role, is_active FROM \"Accounts\" WHERE login = @login";
             var param = new NpgsqlParameter("@login", login);
+            //Резервирую память под DATATABLE , где потом... ВОЗМОЖНО будет лежать 
+            //Найденный аккаунт
             DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
             if (dt.Rows.Count == 0) return (0, "", 0);
-
+            //Если кол-во строк в виртуальной таблице = 0. То в таком случае , аккаунт не найден
+            
             DataRow row = dt.Rows[0];
+            //Если акк найден , то мы начинаем смотреть на его данные и сравнивать ШИФР.Пароль из таблицы с 
+            //ШИФР.Паролем , который пользователь ввёл. 
             string storedHash = row["password_hash"].ToString();
             bool isActive = Convert.ToBoolean(row["is_active"]);
-            if (!isActive) return (Convert.ToInt32(row["id"]), row["role"].ToString(), -1);
+            //так-же не забываем проверить акк на наличие блокировок
+            if (!isActive) return (Convert.ToInt32(row["id"]), row["role"].ToString(),0);
+            //ИТОГ , после работы этой функции я возвращаю ответ (АйДи , РОЛЬ , статус_аунтефикации) 
 
             bool isValid = BCrypt.Net.BCrypt.Verify(plainPassword, storedHash);
             if (!isValid) return (0, "", 0);
-
+            //Статусы аунтефикации :
+            //0 - неудачa (неверный логин или пароль)
+            //1 - успешная аунтефикация
+            //-1 :он неактивен (заблокирован)
             return (Convert.ToInt32(row["id"]), row["role"].ToString(), 1);
         }
 
         static Account GetAccountById(int id)
         {
-            string sql = "SELECT id, login, password_hash, email, fullname, position, role, created_at, is_active FROM \"Accounts\" WHERE id = @id";
+            string sql = "SELECT * FROM \"Accounts\" WHERE id = @id";
             var param = new NpgsqlParameter("@id", id);
-            DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
-            if (dt.Rows.Count == 0) return null;
+            DataTable table = Database.Database.ExecuteQuery(sql, new[] { param });
+            if (table.Rows.Count == 0) return null;
 
-            DataRow row = dt.Rows[0];
+            DataRow row = table.Rows[0];
             string position = row["position"] == DBNull.Value ? null : row["position"].ToString();
+
+
+            //или так
+            //string position2;
+            //if (row["position"] == DBNull.Value)
+            //{
+            //    position2 = null;
+            //}
+            //else if (row["position"] != DBNull.Value || row["position"].ToString().IsWhiteSpace())
+            //{
+            //    position2 = row["position"].ToString(); // 'Admin' -> "Admin"
+
+            //}
+
+
             object createdObj = row["created_at"];
             DateTime createdAt = createdObj is DateOnly d ? d.ToDateTime(TimeOnly.MinValue) : Convert.ToDateTime(createdObj);
+
+
+            //DATE -> DATETIME , они не равны между собой. Поэтому лишний раз, проводим конвертацию.
+
+            //DATE -> ГГГГ-ММ-ДД ЧЧ:ММ:СС
+            //DATETIME -> ГГГГ-ММ-ДД ЧЧ:ММ:СС:МсМсМ
+
+            //0000-00-00 00:00:00 = ОШИБКА (TimeOnly.MinValue)
+            //NULL = ОШИБКА (is DateOnly)
+
 
             return new Account(
                 Convert.ToInt32(row["id"]),
@@ -207,7 +251,8 @@ namespace JiraCopyProject
 
         static void LoadUserTeam()
         {
-            string sql = @"SELECT t.id, t.name FROM ""TeamMembers"" tm JOIN ""Teams"" t ON tm.team_id = t.id WHERE tm.account_id = @userId AND tm.is_active = true LIMIT 1";
+            string sql = @"SELECT t.id, t.name FROM ""TeamMembers"" tm JOIN ""Teams"" t 
+            ON tm.team_id = t.id WHERE tm.account_id = @userId AND tm.is_active = true LIMIT 1";
             var param = new NpgsqlParameter("@userId", currentUser.GetId());
             DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
             if (dt.Rows.Count > 0)
@@ -224,21 +269,20 @@ namespace JiraCopyProject
 
         static void CreateTask()
         {
-            Console.Clear();
             Console.WriteLine("=== Создание задачи ===\n");
 
+            //Запрос данных для НОВОЙ задачи
             Console.Write("Название: ");
             string title = Console.ReadLine();
             Console.Write("Описание: ");
             string description = Console.ReadLine();
-
             Console.Write("ID исполнителя (Enter - назначить на себя): ");
             string assigneeInput = Console.ReadLine();
             int assigneeId = string.IsNullOrEmpty(assigneeInput) ? currentUser.GetId() : int.Parse(assigneeInput);
-
             Console.Write("Срок выполнения (ГГГГ-ММ-ДД): ");
             DateTime dueDate = DateTime.Parse(Console.ReadLine());
 
+            //Вставка параметров
             string sql = "CALL \"InsertTask\"(@title, @desc, @statusId, @assignee, @creator, @dueDate, NULL)";
             var parameters = new[]
             {
@@ -249,13 +293,13 @@ namespace JiraCopyProject
                 new NpgsqlParameter("@creator", currentUser.GetId()),
                 new NpgsqlParameter("@dueDate", NpgsqlDbType.Date) { Value = dueDate }
             };
-
             try
             {
                 Database.Database.ExecuteNonQuery(sql, parameters);
                 Console.WriteLine("\nЗадача успешно создана!");
             }
             catch (Exception ex) { Console.WriteLine("\nОшибка: " + ex.Message); }
+            
         }
 
         static void ShowUserTasks()
@@ -264,21 +308,38 @@ namespace JiraCopyProject
             Console.WriteLine("=== Мои задачи ===\n");
 
             string sql = "SELECT * FROM \"GetUserTasks\"(@p_account_id)";
+            //Ищем задачи по АйДи исполнителя
             var param = new NpgsqlParameter("@p_account_id", currentUser.GetId());
             DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
             if (dt.Rows.Count == 0) { Console.WriteLine("У вас нет задач."); return; }
+            
 
             Console.WriteLine("ID\tНазвание\t\tСтатус\t\tСрок\t\tТип");
-            Console.WriteLine(new string('-', 75));
             foreach (DataRow row in dt.Rows)
             {
                 string personal = Convert.ToBoolean(row["is_personal"]) ? "Личная" : "Командная";
                 Console.WriteLine($"{row["id"]}\t{row["title"]}\t\t{row["status_name"]}\t\t{FormatDate(row["due_date"])}\t{personal}");
             }
 
+
+
+            //////Вариант 1 (Не советую , тк далее буду дробить функционал на консольный и логический)
+            //Console.WriteLine("\nДля просмотра деталей введите ID задачи (0 - вернуться в меню): ");
+            //if (int.TryParse(Console.ReadLine(), out int taskId) && taskId > 0)
+            //    ShowTaskDetails(taskId);
+
+            //Вариант 2
             Console.WriteLine("\nДля просмотра деталей введите ID задачи (0 - вернуться в меню): ");
-            if (int.TryParse(Console.ReadLine(), out int taskId) && taskId > 0)
-                ShowTaskDetails(taskId);
+            int choicenTaskForDetailsView = int.Parse(Console.ReadLine());
+            if (choicenTaskForDetailsView != 0 && choicenTaskForDetailsView > 0)
+            {
+                ShowTaskDetails(choicenTaskForDetailsView);
+            }
+            else if (choicenTaskForDetailsView == 0)
+            {
+                Console.Clear();
+                ShowUserMenu();
+            }
         }
 
         static void ShowTaskDetails(int taskId)
@@ -408,3 +469,19 @@ namespace JiraCopyProject
         }
     }
 }
+
+
+//1234 -> '1','2','3','4'
+
+//В библиотеке зашита азбука,
+//где каждая буква и\или цифра и\или знак = какому-то значению
+//Так-же шифраторы смотрят на ИНДЕКС положения символа в строке
+//BCrypt в промежутки между СИМВОЛАМИ пароля , вставляет N СИМВОЛЫ.
+
+
+//1234 = 
+//$2a$11$ qtsYyqgtywalRJRaUzqXJuQyxxJD/kd2Yk8O1aEZ1uflsQ6WYzGBG
+//2222 = 
+//$2a$11$ 3aT6xjAcG3zxegOM02UjZ.MMZv9D3XDqulWrzORgLq9q61DY9tfe2
+//1111 =
+//$2a$11$ THeXr4vykvAy4z3PHNakHeWPjkSMwd4i/9o7Tdoi2LZMI2TD7f/qG

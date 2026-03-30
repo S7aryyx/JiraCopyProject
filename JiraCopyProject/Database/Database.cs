@@ -25,7 +25,7 @@ namespace JiraCopyProject.Database
             }
         }
 
-        // Выполнение запроса с возвратом одного значения (SCALAR)
+        // Выполнение запроса с возвратом одного значения
         public static object ExecuteScalar(string sql, NpgsqlParameter[] parameters = null)
         {
             using (var conn = GetConnection())
