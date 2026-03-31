@@ -1,7 +1,7 @@
-﻿//Шаблон БД (Вернее таблиц и процедур для работы с БД) для проекта JiraCopy.
+﻿-- Шаблон БД (таблицы и процедуры) для проекта JiraCopy.
 
 -- 1. Создание базы данных
---CREATE DATABASE jiracopy;
+-- CREATE DATABASE jiracopy;
 
 -- 2. Таблицы и индексы
 
@@ -101,17 +101,18 @@ CREATE INDEX idx_taskstatushistory_task_id ON "TaskStatusHistory" (task_id);
 CREATE INDEX idx_taskstatushistory_changed_by_id ON "TaskStatusHistory" (changed_by_id);
 CREATE INDEX idx_task_history_task_date ON "TaskStatusHistory" (task_id ASC, changed_at DESC);
 
+-- Исправлено название поля autor_id → author_id
 CREATE TABLE "TaskComments" (
     id         SERIAL PRIMARY KEY,
     task_id    INTEGER NOT NULL REFERENCES "Tasks" ON DELETE CASCADE,
-    autor_id   INTEGER NOT NULL REFERENCES "Accounts",
+    author_id  INTEGER NOT NULL REFERENCES "Accounts",
     comment    TEXT NOT NULL,
     created_at DATE DEFAULT CURRENT_TIMESTAMP,
     updated_at DATE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_taskcomments_task_id ON "TaskComments" (task_id);
-CREATE INDEX idx_taskcomments_autor_id ON "TaskComments" (autor_id);
+CREATE INDEX idx_taskcomments_author_id ON "TaskComments" (author_id);
 
 CREATE TABLE "Tags" (
     id         SERIAL PRIMARY KEY,
@@ -128,14 +129,14 @@ CREATE TABLE "TaskTags" (
 
 -- 3. Хранимые процедуры
 
-
---1 Создание задачи
+-- 1 Создание задачи (исправлено: добавлен параметр p_team_id)
 CREATE OR REPLACE PROCEDURE "InsertTask"(
     IN p_title VARCHAR,
     IN p_description TEXT,
     IN p_status_id INTEGER,
     IN p_assignee_id INTEGER,
     IN p_creator_id INTEGER,
+    IN p_team_id INTEGER DEFAULT NULL,
     IN p_due_date DATE DEFAULT NULL,
     IN p_parent_task_id INTEGER DEFAULT NULL
 )
@@ -149,6 +150,7 @@ BEGIN
         due_date,
         assignee_id,
         creator_id,
+        team_id,
         parent_task_id,
         create_date
     )
@@ -159,14 +161,14 @@ BEGIN
         COALESCE(p_due_date, CURRENT_DATE),
         p_assignee_id,
         p_creator_id,
+        p_team_id,
         p_parent_task_id,
         CURRENT_DATE
     );
 END;
 $$;
 
-
---2 Обновление статуса задачи
+-- 2 Обновление статуса задачи
 CREATE OR REPLACE PROCEDURE "UpdateTaskStatus"(
     IN p_task_id INTEGER,
     IN p_new_status INTEGER,
@@ -194,8 +196,6 @@ BEGIN
         updated_at = CURRENT_TIMESTAMP
     WHERE id = p_task_id;
 
-
-    --3 Авто-Логгер истории статуса
     INSERT INTO "TaskStatusHistory"(
         task_id,
         old_status_id,
@@ -214,7 +214,7 @@ BEGIN
 END;
 $$;
 
---4 Авто-Логгер истории даты сдачи
+-- 3 Авто-Логгер истории даты сдачи
 CREATE OR REPLACE PROCEDURE "UpdateTaskDeadline"(
     IN p_task_id INTEGER,
     IN p_new_deadline DATE,
@@ -260,8 +260,7 @@ BEGIN
 END;
 $$;
 
--- 5 Обновление полей задачи
-
+-- 4 Обновление полей задачи
 CREATE OR REPLACE PROCEDURE "UpdateTask"(
     IN p_id INTEGER,
     IN p_title VARCHAR DEFAULT NULL,
@@ -309,8 +308,7 @@ BEGIN
 END;
 $$;
 
---6 удаление задачи
-
+-- 5 Удаление задачи
 CREATE OR REPLACE PROCEDURE "RemoveTask"(IN p_id INTEGER)
 LANGUAGE plpgsql
 AS $$
@@ -328,9 +326,7 @@ BEGIN
 END;
 $$;
 
-
---Добавление пользователя в команду
-
+-- Добавление пользователя в команду
 CREATE OR REPLACE PROCEDURE "AddUserToTeam"(
     IN p_team_id INTEGER,
     IN p_account_id INTEGER,
@@ -355,8 +351,7 @@ BEGIN
 END;
 $$;
 
-
---7 Чистка всех таблиц
+-- Чистка всех таблиц
 CREATE OR REPLACE PROCEDURE "ClearAll"()
 LANGUAGE plpgsql
 AS $$
@@ -370,10 +365,7 @@ BEGIN
 END;
 $$;
 
-
-
--- 8Регистрация нового аккаунта
--- Возвращает: 1 - успех, 0 - логин уже существует, -1 - email уже существует
+-- 8 Регистрация нового аккаунта
 CREATE OR REPLACE FUNCTION "RegisterAccount"
 (
     p_login VARCHAR(100),
@@ -404,7 +396,6 @@ END;
 $$;
 
 -- 9 Авторизация пользователя
--- Возвращает: id пользователя, роль и статус (1 - успех, 0 - неверные данные, -1 - аккаунт заблокирован)
 CREATE OR REPLACE FUNCTION "AuthenticateAccount"
 (
     p_login VARCHAR(100),
@@ -438,7 +429,7 @@ BEGIN
 END;
 $$;
 
--- 10 Назначение задачи всем активным участникам команды
+-- 10 Назначение задачи всем активным участникам команды (опционально)
 CREATE OR REPLACE PROCEDURE "AssignTaskToAllMembers"
 (
     p_title VARCHAR(200),
@@ -532,8 +523,7 @@ BEGIN
 END;
 $$;
 
---13 Получение всех задач у N пользователя
-
+-- 13 Получение всех задач пользователя
 CREATE OR REPLACE FUNCTION "GetUserTasks"(p_account_id INTEGER)
 RETURNS TABLE(
     id INTEGER,
