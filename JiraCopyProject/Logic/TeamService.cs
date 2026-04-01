@@ -182,12 +182,12 @@ namespace JiraCopyProject.Logic.Services
             return Database.Database.ExecuteQuery(sql, new[]{ param });
         }
 
-        public static bool DeleteTeam(int TeamId , int UserId , string role)
+        public static bool DeleteTeam(int TeamId , int CurrentUserId , string role)
         {
             if (role == "TeamLead")
             {
                 //Является ли ТЕКУЩИЙ пользователь РУКОВОДИТЕЛЕМ N команды
-                bool isLead = IsUserTeamLead(UserId , TeamId);
+                bool isLead = IsUserTeamLead(CurrentUserId , TeamId);
 
                 if (!isLead)
                 {
