@@ -43,6 +43,7 @@ namespace JiraCopyProject
                     else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "9") AssignTaskToAnotherUser();
                     else if (currentUser.GetRole() == "Admin" && choice == "10") TransferTeamLead();
                     else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "11") AddTeamTask();
+                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "12") ManageTeams();
                     else Console.WriteLine("Неверный выбор. Попробуйте снова.");
                 }
 
@@ -114,6 +115,9 @@ namespace JiraCopyProject
                 Console.WriteLine("  8. Добавить пользователя в мою команду");
                 Console.WriteLine("  9. Назначить задачу другому пользователю");
                 Console.WriteLine("  11. Создать задачу на всю команду");
+                Console.WriteLine("  12. Управление командами (По АйДи)");
+                Console.WriteLine("  13. Удалить командную задачу (по АйДи задачи");
+                Console.WriteLine("  14. Посмотреть участников команды(по АйДи команды)");
             }
             if (role == "Admin")
             {
@@ -665,12 +669,104 @@ namespace JiraCopyProject
             }
         }
 
-        static void Logout()
+        static void ManageTeams()
         {
-            currentUser = null;
-            currentUserTeamId = null;
-            currentUserTeamName = null;
-            Console.WriteLine("\nВы вышли из аккаунта.");
+            Console.Clear();
+            string role = currentUser.GetRole();
+            DataTable teams = new DataTable();
+
+            if (role == "Admin")
+            {
+                //Все команды сохранены в Виртуальную таблицу
+                teams = TeamService.GetAllTeams();
+
+                if (teams.Rows.Count == 0)
+                {
+                    Console.WriteLine("Команды пустые");
+                    return;
+                }
+
+                Console.WriteLine("=== Список всех команд ===\n");
+
+                //Для каждой строки в таблице Teams(уточняю, что нужны СТРОКИ)
+                foreach (DataRow row in teams.Rows)
+                {
+                    Console.WriteLine($"{row["id"]}\t{row["name"]}\t{row["team_lead_id"]}");
+                }
+
+
+
+                //Вывести меню 
+                //(Работа с командами:
+                Console.WriteLine("1.Посмотреть участников команды (по АйДи)");
+                Console.WriteLine("2.Назначить Задачу на всб команду (УЖЕ ЕСТЬ)");
+                Console.WriteLine("3.Удалить Команду");
+                Console.WriteLine("4.Удалить назначенную (Командную задачу). УЖЕ ЕСТЬ (это умеет делать админ или тимлид)");
+                Console.WriteLine("0. Псевдо выход");
+
+                int choice = int.Parse(Console.ReadLine());
+
+                if (choice == 1)
+                {
+                    Console.WriteLine("Введите АйДи команды:");
+                    int ChoicenTeam = int.Parse(Console.ReadLine());
+                    DataTable TeamMembers = Logic.Services.TeamService.GetTeamMembers(ChoicenTeam);
+
+                    Console.WriteLine($" ===Участники комнады: {ChoicenTeam}=== \n");
+                    foreach (DataRow row in TeamMembers.Rows)
+                    {
+                        Console.WriteLine($"{row["login"]}\t{row["fullname"]}\t{row["role"]}");
+                    }
+                }
+                //Есть ли в полученной Таблице команда с id , который ввёл пользователь
+                //(обращаемся к ЛОКАЛЬНОЙ , виртуальной таблице teams)
+            }
+            else if (role == "TeamLead")
+            {
+                teams = TeamService.GetUserLeadTeams(currentUser.GetId());
+
+                if (teams.Rows.Count == 0)
+                {
+                    Console.WriteLine("Команды пустые");
+                    return;
+                }
+
+                Console.WriteLine("=== Список всех команд ===\n");
+
+                foreach (DataRow row in teams.Rows)
+                {
+                    Console.WriteLine($"{row["id"]}\t{row["name"]}");
+                }
+                Console.WriteLine("1.Посмотреть участников команды (по АйДи)");
+                Console.WriteLine("2.Назначить Задачу на всб команду (УЖЕ ЕСТЬ)");
+                Console.WriteLine("3.Удалить Команду");
+                Console.WriteLine("4.Удалить назначенную (Командную задачу). УЖЕ ЕСТЬ (это умеет делать админ или тимлид)");
+                Console.WriteLine("0. Псевдо выход");
+
+                int choice = int.Parse(Console.ReadLine());
+
+                if (choice == 1)
+                {
+                    Console.WriteLine("Введите АйДи команды:");
+                    int ChoicenTeam = int.Parse(Console.ReadLine());
+                    DataTable TeamMembers = Logic.Services.TeamService.GetTeamMembers(ChoicenTeam);
+
+                    Console.WriteLine($" ===Участники комнады: {ChoicenTeam}=== \n");
+                    foreach (DataRow row in TeamMembers.Rows)
+                    {
+                        Console.WriteLine($"{row["login"]}\t{row["fullname"]}\t{row["role"]}");
+                    }
+                }
+            }
+        }
+
+
+            static void Logout()
+            {
+                currentUser = null;
+                currentUserTeamId = null;
+                currentUserTeamName = null;
+                Console.WriteLine("\nВы вышли из аккаунта.");
+            }
         }
     }
-}

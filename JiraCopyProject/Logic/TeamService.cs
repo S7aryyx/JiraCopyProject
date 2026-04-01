@@ -1,7 +1,11 @@
 ﻿using JiraCopyProject.Database;
+using JiraCopyProject.Logic.Models;
 using Npgsql;
 using System;
 using System.Data;
+using System.Numerics;
+using System.Reflection.Metadata.Ecma335;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace JiraCopyProject.Logic.Services
 {
@@ -154,5 +158,63 @@ namespace JiraCopyProject.Logic.Services
             var param = new NpgsqlParameter("@leadId", accountId);
             return Database.Database.ExecuteQuery(sql, new[] { param });
         }
+
+        public static DataTable GetAllTeams()
+        {
+            string sql = "SELECT * FROM \"Teams\" ORDER BY id";
+
+            //Получаем в качестве ответа заполненный DataTable со всеми командами
+            return Database.Database.ExecuteQuery(sql);
+            //return Database.Database.ExecuteQuery(sql, null);
+        }
+
+        public static DataTable GetTeamMembers(int teamId)
+        {
+            //Запрос на получение из таблицы Accounts
+            //Данных: id , login , fullname , role , is_active
+            //У тех пользователей , которые есть в команде N
+            string sql = @"SELECT login , fullname , role FROM " +
+                "\"TeamMembers\" tm JOIN " + "\"Accounts\" acc " +
+                "ON tm.account_id = acc.id WHERE tm.team_id = @teamId " +
+                "AND acc.is_active = true ORDER BY acc.id; ";
+
+            var param = new NpgsqlParameter("@teamId", teamId);
+            return Database.Database.ExecuteQuery(sql, new[]{ param });
+        }
+
+        public static bool DeleteTeam(int TeamId , int UserId , string role)
+        {
+            if (role == "TeamLead")
+            {
+                //Является ли ТЕКУЩИЙ пользователь РУКОВОДИТЕЛЕМ N команды
+                bool isLead = IsUserTeamLead(UserId , TeamId);
+
+                if (!isLead)
+                {
+                    return false; //Если пользователь , не является TeamLead. То идёт проверка на админа.
+                }
+            }
+            else if (role != "Admin")
+            {
+                return false;
+            }
+
+            string sql = "DELETE FROM \"Teams\" WHERE id = @teamId";
+
+            var param = new NpgsqlParameter("@teamId" , TeamId);
+
+            try
+            {
+                Database.Database.ExecuteNonQuery(sql, new[] { param });
+                return true; //Если ExecuteNonQuery -> Прошёл и вернул TRUE
+            }
+            catch //нет точного  EXCEPTION , тк ExecuteNonQuery ТОЖЕ возвращает true \ false
+            {
+                //Если ExecuteNonQuery -> Упал и вернул false
+                return false;
+            }
+
+        }
+
     }
 }
