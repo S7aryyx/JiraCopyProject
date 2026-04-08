@@ -1,11 +1,7 @@
 ﻿using JiraCopyProject.Database;
-using JiraCopyProject.Logic.Models;
 using Npgsql;
 using System;
 using System.Data;
-using System.Numerics;
-using System.Reflection.Metadata.Ecma335;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace JiraCopyProject.Logic.Services
 {
@@ -23,57 +19,32 @@ namespace JiraCopyProject.Logic.Services
             try
             {
                 object result = Database.Database.ExecuteScalar(insertTeamSql, teamParams);
-                if (result == null)
-                {
-                    return null;
-                }
+                if (result == null) return null;
                 int teamId = Convert.ToInt32(result);
-
-                // Добавляем лидера в TeamMembers
                 string insertMemberSql = "INSERT INTO \"TeamMembers\" (team_id, account_id, created_at, is_active) VALUES (@teamId, @accountId, CURRENT_DATE, true)";
-                var memberParams = new[]
-                {
-                    new NpgsqlParameter("@teamId", teamId),
-                    new NpgsqlParameter("@accountId", teamLeadId)
-                };
+                var memberParams = new[] { new NpgsqlParameter("@teamId", teamId), new NpgsqlParameter("@accountId", teamLeadId) };
                 Database.Database.ExecuteNonQuery(insertMemberSql, memberParams);
                 return teamId;
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
 
         public static (int? Id, string Name) GetUserTeam(int accountId)
         {
-            string sql = @"SELECT t.id, t.name FROM ""TeamMembers"" tm 
-                           JOIN ""Teams"" t ON tm.team_id = t.id 
-                           WHERE tm.account_id = @userId AND tm.is_active = true 
-                           LIMIT 1";
-            var param = new NpgsqlParameter("@userId", accountId);
-            DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
-            if (dt.Rows.Count == 0)
-            {
-                return (null, null);
-            }
-            else
-            {
-                int id = Convert.ToInt32(dt.Rows[0]["id"]);
-                string name = dt.Rows[0]["name"].ToString();
-                return (id, name);
-            }
+            DataTable dt = Database.Database.ExecuteQuery("SELECT * FROM \"GetUserTeam\"(@p_account_id)", new[] { new NpgsqlParameter("@p_account_id", accountId) });
+            if (dt.Rows.Count == 0) return (null, null);
+            return (Convert.ToInt32(dt.Rows[0]["id"]), dt.Rows[0]["name"].ToString());
         }
 
-        public static bool AddUserToTeam(int teamId, int userId, int addedById)
+        public static bool AddUserToTeam(int teamId, int userId, int addedBy)
         {
             string sql = "CALL \"AddUserToTeam\"(@teamId, @userId, @addedBy)";
             var parameters = new[]
             {
-                new NpgsqlParameter("@teamId", teamId),
-                new NpgsqlParameter("@userId", userId),
-                new NpgsqlParameter("@addedBy", addedById)
-            };
+        new NpgsqlParameter("@teamId", teamId),
+        new NpgsqlParameter("@userId", userId),
+        new NpgsqlParameter("@addedBy", addedBy)
+    };
             try
             {
                 Database.Database.ExecuteNonQuery(sql, parameters);
@@ -87,134 +58,65 @@ namespace JiraCopyProject.Logic.Services
 
         public static bool TransferTeamLead(int teamId, int newLeadId, int currentUserId, string role)
         {
-            if (role != "Admin")
-            {
-                return false;
-            }
-
-            // Проверяем существование команды
-            string checkSql = "SELECT team_lead_id FROM \"Teams\" WHERE id = @teamId";
-            var param = new NpgsqlParameter("@teamId", teamId);
-            DataTable dt = Database.Database.ExecuteQuery(checkSql, new[] { param });
-            if (dt.Rows.Count == 0)
-            {
-                return false;
-            }
-
-            // Проверяем, что новый лидер имеет роль TeamLead
-            string userSql = "SELECT role FROM \"Accounts\" WHERE id = @userId";
-            var userParam = new NpgsqlParameter("@userId", newLeadId);
-            DataTable userDt = Database.Database.ExecuteQuery(userSql, new[] { userParam });
-            if (userDt.Rows.Count == 0)
-            {
-                return false;
-            }
-            string newLeadRole = userDt.Rows[0]["role"].ToString();
-            if (newLeadRole != "TeamLead")
-            {
-                return false;
-            }
-
-            // Обновляем команду
-            string updateSql = "UPDATE \"Teams\" SET team_lead_id = @newLeadId WHERE id = @teamId";
-            var updateParams = new[]
-            {
-                new NpgsqlParameter("@newLeadId", newLeadId),
-                new NpgsqlParameter("@teamId", teamId)
-            };
+            if (role != "Admin") return false;
+            DataTable dt = Database.Database.ExecuteQuery("SELECT team_lead_id FROM \"Teams\" WHERE id = @teamId", new[] { new NpgsqlParameter("@teamId", teamId) });
+            if (dt.Rows.Count == 0) return false;
+            DataTable userDt = Database.Database.ExecuteQuery("SELECT role FROM \"Accounts\" WHERE id = @userId", new[] { new NpgsqlParameter("@userId", newLeadId) });
+            if (userDt.Rows.Count == 0 || userDt.Rows[0]["role"].ToString() != "TeamLead") return false;
             try
             {
-                Database.Database.ExecuteNonQuery(updateSql, updateParams);
+                Database.Database.ExecuteNonQuery("UPDATE \"Teams\" SET team_lead_id = @newLeadId WHERE id = @teamId", new[] { new NpgsqlParameter("@newLeadId", newLeadId), new NpgsqlParameter("@teamId", teamId) });
                 return true;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
         public static bool IsUserTeamLead(int accountId, int teamId)
         {
-            string sql = "SELECT id FROM \"Teams\" WHERE id = @teamId AND team_lead_id = @leadId";
-            var parameters = new[]
-            {
-                new NpgsqlParameter("@teamId", teamId),
-                new NpgsqlParameter("@leadId", accountId)
-            };
-            DataTable dt = Database.Database.ExecuteQuery(sql, parameters);
-            if (dt.Rows.Count > 0)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+            object result = Database.Database.ExecuteScalar("SELECT \"IsUserTeamLead\"(@p_account_id, @p_team_id)", new[] { new NpgsqlParameter("@p_account_id", accountId), new NpgsqlParameter("@p_team_id", teamId) });
+            return result != null && Convert.ToBoolean(result);
         }
 
         public static DataTable GetUserLeadTeams(int accountId)
         {
-            string sql = "SELECT id, name FROM \"Teams\" WHERE team_lead_id = @leadId ORDER BY id";
-            var param = new NpgsqlParameter("@leadId", accountId);
-            return Database.Database.ExecuteQuery(sql, new[] { param });
+            return Database.Database.ExecuteQuery("SELECT * FROM \"GetUserLeadTeams\"(@p_account_id)", new[] { new NpgsqlParameter("@p_account_id", accountId) });
         }
 
         public static DataTable GetAllTeams()
         {
-            string sql = "SELECT * FROM \"Teams\" ORDER BY id";
-
-            //Получаем в качестве ответа заполненный DataTable со всеми командами
-            return Database.Database.ExecuteQuery(sql);
-            //return Database.Database.ExecuteQuery(sql, null);
+            return Database.Database.ExecuteQuery("SELECT * FROM \"GetAllTeams\"()");
         }
 
         public static DataTable GetTeamMembers(int teamId)
         {
-            //Запрос на получение из таблицы Accounts
-            //Данных: id , login , fullname , role , is_active
-            //У тех пользователей , которые есть в команде N
-            string sql = @"SELECT login , fullname , role FROM " +
-                "\"TeamMembers\" tm JOIN " + "\"Accounts\" acc " +
-                "ON tm.account_id = acc.id WHERE tm.team_id = @teamId " +
-                "AND acc.is_active = true ORDER BY acc.id; ";
-
-            var param = new NpgsqlParameter("@teamId", teamId);
-            return Database.Database.ExecuteQuery(sql, new[]{ param });
+            return Database.Database.ExecuteQuery("SELECT * FROM \"GetTeamMembers\"(@p_team_id)", new[] { new NpgsqlParameter("@p_team_id", teamId) });
         }
 
-        public static bool DeleteTeam(int TeamId , int CurrentUserId , string role)
+        public static bool DeleteTeam(int teamId, int currentUserId, string role)
         {
-            if (role == "TeamLead")
-            {
-                //Является ли ТЕКУЩИЙ пользователь РУКОВОДИТЕЛЕМ N команды
-                bool isLead = IsUserTeamLead(CurrentUserId , TeamId);
-
-                if (!isLead)
-                {
-                    return false; //Если пользователь , не является TeamLead. То идёт проверка на админа.
-                }
-            }
-            else if (role != "Admin")
-            {
-                return false;
-            }
-
-            string sql = "DELETE FROM \"Teams\" WHERE id = @teamId";
-
-            var param = new NpgsqlParameter("@teamId" , TeamId);
-
+            if (role == "TeamLead" && !IsUserTeamLead(currentUserId, teamId)) return false;
+            if (role != "Admin" && role != "TeamLead") return false;
             try
             {
-                Database.Database.ExecuteNonQuery(sql, new[] { param });
-                return true; //Если ExecuteNonQuery -> Прошёл и вернул TRUE
+                Database.Database.ExecuteNonQuery("CALL \"DeleteTeam\"(@p_team_id)", new[] { new NpgsqlParameter("@p_team_id", teamId) });
+                return true;
             }
-            catch //нет точного  EXCEPTION , тк ExecuteNonQuery ТОЖЕ возвращает true \ false
-            {
-                //Если ExecuteNonQuery -> Упал и вернул false
-                return false;
-            }
-
+            catch { return false; }
         }
 
+        public static bool RemoveUserFromTeam(int teamId, int userId)
+        {
+            try
+            {
+                Database.Database.ExecuteNonQuery("CALL \"RemoveUserFromTeam\"(@p_team_id, @p_user_id)", new[] { new NpgsqlParameter("@p_team_id", teamId), new NpgsqlParameter("@p_user_id", userId) });
+                return true;
+            }
+            catch { return false; }
+        }
+
+        public static DataTable GetUserTeams(int userId)
+        {
+            return Database.Database.ExecuteQuery("SELECT * FROM \"GetUserTeams\"(@p_user_id)", new[] { new NpgsqlParameter("@p_user_id", userId) });
+        }
     }
 }

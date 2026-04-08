@@ -1,10 +1,9 @@
-﻿using JiraCopyProject.Logic.Services;
+﻿using JiraCopyProject.Database;
 using JiraCopyProject.Logic.Models;
+using JiraCopyProject.Logic.Services;
+using Npgsql;
 using System;
 using System.Data;
-using System.Diagnostics;
-using System.Security.AccessControl;
-using System.Reflection.Metadata;
 
 namespace JiraCopyProject
 {
@@ -13,6 +12,16 @@ namespace JiraCopyProject
         static Account currentUser = null;
         static int? currentUserTeamId = null;
         static string currentUserTeamName = null;
+
+        static string FormatDateString(object dateObj)
+        {
+            if (dateObj == null || dateObj == DBNull.Value) return "—";
+            if (dateObj is DateOnly dateOnly)
+                return dateOnly.ToString("yyyy-MM-dd");
+            if (dateObj is DateTime dateTime)
+                return dateTime.ToString("yyyy-MM-dd");
+            return "—";
+        }
 
         static void Main()
         {
@@ -24,33 +33,59 @@ namespace JiraCopyProject
                 if (currentUser == null)
                 {
                     ShowMainMenu();
-                    string choice = Console.ReadLine();
-                    if (choice == "1") Register();
-                    else if (choice == "2") Login();
-                    else if (choice == "0") exit = true;
-                    else Console.WriteLine("Неверный выбор. Попробуйте снова.");
+                    if (int.TryParse(Console.ReadLine(), out int choice))
+                    {
+                        switch (choice)
+                        {
+                            case 1: Register(); break;
+                            case 2: Login(); break;
+                            case 0: exit = true; break;
+                            default: Console.WriteLine("Неверный выбор. Попробуйте снова."); break;
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Неверный ввод.");
+                    }
                 }
                 else
                 {
                     ShowUserMenu();
-                    string choice = Console.ReadLine();
-                    if (choice == "1") CreateTask();
-                    else if (choice == "2") ShowUserTasks();
-                    else if (choice == "3") EditTask();
-                    else if (choice == "4") ChangeTaskStatus();
-                    else if (choice == "5") Logout();
-                    else if (choice == "0") exit = true;
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "6") CreateTeam();
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "7") ListAllUsers();
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "8") AddUserToMyTeam();
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "9") AssignTaskToAnotherUser();
-                    else if (currentUser.GetRole() == "Admin" && choice == "10") TransferTeamLead();
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "11") AddTeamTask();
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "12") ManageTeams();
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "13") ShowAllTeams();
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "14") ShowTeamMembers();
-                    else if ((currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin") && choice == "15") ShowDeletingTeam();
-                    else Console.WriteLine("Неверный выбор. Попробуйте снова.");
+                    if (int.TryParse(Console.ReadLine(), out int choice))
+                    {
+                        switch (choice)
+                        {
+                            case 1: CreateTask(); break;
+                            case 2: ShowUserTasks(); break;
+                            case 3: EditTask(); break;
+                            case 4: ChangeTaskStatus(); break;
+                            case 5: Logout(); break;
+                            case 0: exit = true; break;
+                            case 6 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": CreateTeam(); break;
+                            case 7 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": ListAllUsers(); break;
+                            case 8 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": AddUserToMyTeam(); break;
+                            case 9 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": AssignTaskToAnotherUser(); break;
+                            case 10 when currentUser.GetRole() == "Admin": TransferTeamLead(); break;
+                            case 11 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": AddTeamTask(); break;
+                            case 12 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": ManageTeams(); break;
+                            case 13 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": ShowAllTeams(); break;
+                            case 14 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": ShowTeamMembers(); break;
+                            case 15 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": ShowDeletingTeam(); break;
+                            case 16 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": CopyTaskUI(); break;
+                            case 17 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": CreateSubtaskUI(); break;
+                            case 18 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": ShowSubtaskTree(); break;
+                            case 19 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": ManageComments(); break;
+                            case 20 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": ManageTags(); break;
+                            case 21 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": FiltersMenu(); break;
+                            case 22 when currentUser.GetRole() == "TeamLead" || currentUser.GetRole() == "Admin": HistoryMenu(); break;
+                            case 23: ShowUserStats(); break;
+                            default: Console.WriteLine("Неверный выбор. Попробуйте снова."); break;
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Неверный ввод.");
+                    }
                 }
 
                 if (!exit)
@@ -81,71 +116,53 @@ namespace JiraCopyProject
             Console.WriteLine($"  Добро пожаловать, {currentUser.GetFullname()}!");
             Console.WriteLine($"  ID: {currentUser.GetId()} | Роль: {currentUser.GetRole()}");
 
-            // Должность
             string position = currentUser.GetPosition();
-            if (position == null)
-            {
-                Console.WriteLine("  Должность: не указана");
-            }
-            else
-            {
-                Console.WriteLine($"  Должность: {position}");
-            }
+            Console.WriteLine(string.IsNullOrEmpty(position) ? "  Должность: не указана" : $"  Должность: {position}");
 
-            // Команда
             if (currentUserTeamId.HasValue)
-            {
                 Console.WriteLine($"  Команда: {currentUserTeamName} (ID: {currentUserTeamId})");
-            }
             else
-            {
                 Console.WriteLine("  Команда: не состоит");
-            }
 
-            // Общее меню (всегда)
             Console.WriteLine("============================================================");
             Console.WriteLine("  1. Создать задачу");
-            Console.WriteLine("  2. Мои задачи (назначенные мне)");
-            Console.WriteLine("  3. Редактировать задачу (только свои)");
+            Console.WriteLine("  2. Мои задачи");
+            Console.WriteLine("  3. Редактировать задачу");
             Console.WriteLine("  4. Изменить статус задачи");
             Console.WriteLine("  5. Выйти из аккаунта");
             Console.WriteLine("  0. Выход из программы");
 
-            // Дополнительные функции для TeamLead/Admin
             string role = currentUser.GetRole();
             if (role == "TeamLead" || role == "Admin")
             {
                 Console.WriteLine("--- Командные функции ---");
                 Console.WriteLine("  6. Создать команду");
                 Console.WriteLine("  7. Список всех пользователей");
-                Console.WriteLine("  8. Добавить пользователя в мою команду");
-                Console.WriteLine("  9. Назначить задачу другому пользователю");
-                Console.WriteLine("  11. Создать задачу на всю команду");
-                Console.WriteLine("  12. Управление командами (По АйДи)");
-                //
-                Console.WriteLine("  13.Посмотреть команды (В случае Админа - все).");
-                Console.WriteLine("  14.Посмотреть участников команды (по АйДи)");
-                Console.WriteLine("  15.Удалить команду (По АйДи)");
-                //
+                Console.WriteLine("  8. Добавить пользователя в команду");
+                Console.WriteLine("  9. Назначить задачу пользователю");
+                Console.WriteLine("  11. Создать задачу на команду");
+                Console.WriteLine("  12. Управление командами");
+                Console.WriteLine("  13. Посмотреть команды");
+                Console.WriteLine("  14. Участники команды");
+                Console.WriteLine("  15. Удалить команду");
+                Console.WriteLine("--- Расширенные функции ---");
+                Console.WriteLine("  16. Копировать задачу");
+                Console.WriteLine("  17. Создать подзадачу");
+                Console.WriteLine("  18. Дерево подзадач");
+                Console.WriteLine("  19. Комментарии");
+                Console.WriteLine("  20. Теги");
+                Console.WriteLine("  21. Фильтры и поиск");
+                Console.WriteLine("  22. История изменений");
             }
             if (role == "Admin")
             {
                 Console.WriteLine("--- Администрирование ---");
-                Console.WriteLine("  10. Передать управление командой другому TeamLead");
+                Console.WriteLine("  10. Передать лидерство в команде");
             }
+            Console.WriteLine("  23. Моя статистика");
             Console.WriteLine("============================================================");
             Console.Write("Ваш выбор: ");
         }
-
-        static string FormatDate(object dateObj)
-        {
-            if (dateObj is DateOnly dateOnly)
-            {
-                return dateOnly.ToDateTime(TimeOnly.MinValue).ToString("yyyy-MM-dd");
-            }
-            return Convert.ToDateTime(dateObj).ToString("yyyy-MM-dd");
-        }
-
         static void Register()
         {
             Console.Clear();
@@ -163,26 +180,15 @@ namespace JiraCopyProject
             string position = Console.ReadLine();
 
             int result = AccountService.Register(login, password, email, fullname, position);
-            string msg;
-            if (result == 1)
+            string msg = result switch
             {
-                msg = "Регистрация прошла успешно!";
-            }
-            else if (result == 0)
-            {
-                msg = "Ошибка: Логин уже занят.";
-            }
-            else if (result == -1)
-            {
-                msg = "Ошибка: Email уже зарегистрирован.";
-            }
-            else
-            {
-                msg = "Неизвестная ошибка регистрации.";
-            }
+                1 => "Регистрация прошла успешно!",
+                0 => "Ошибка: Логин уже занят.",
+                -1 => "Ошибка: Email уже зарегистрирован.",
+                _ => "Неизвестная ошибка регистрации."
+            };
             Console.WriteLine("\n" + msg);
         }
-
         static void Login()
         {
             Console.Clear();
@@ -193,36 +199,71 @@ namespace JiraCopyProject
             Console.Write("Пароль: ");
             string password = Console.ReadLine();
 
-            var (id, role, status) = AccountService.Authenticate(login, password);
-            if (status == 1 && id != 0)
+            try
             {
-                currentUser = AccountService.GetAccountById(id);
-                if (currentUser == null)
+                var (id, role, status) = AccountService.Authenticate(login, password);
+
+                if (status != 1 || id == 0)
                 {
-                    Console.WriteLine("Ошибка загрузки данных пользователя.");
+                    Console.WriteLine(status == -1 ? "\nАккаунт неактивен." : "\nНеверный логин или пароль.");
                     return;
                 }
+
+                string userSql = @"
+                    SELECT id, login, password_hash, email, fullname, position, role, created_at, is_active 
+                    FROM ""Accounts"" 
+                    WHERE id = @id";
+
+                var userParams = new[] { new NpgsqlParameter("@id", id) };
+                DataTable userDt = Database.Database.ExecuteQuery(userSql, userParams);
+
+                if (userDt.Rows.Count == 0)
+                {
+                    Console.WriteLine("\nОшибка загрузки данных пользователя.");
+                    return;
+                }
+
+                DataRow row = userDt.Rows[0];
+
+                DateTime createdAt;
+                object createdObj = row["created_at"];
+                if (createdObj is DateOnly dateOnly)
+                    createdAt = dateOnly.ToDateTime(TimeOnly.MinValue);
+                else
+                    createdAt = Convert.ToDateTime(createdObj);
+
+                currentUser = new Account(
+                    id: Convert.ToInt32(row["id"]),
+                    login: row["login"].ToString(),
+                    passwordHash: row["password_hash"].ToString(),
+                    email: row["email"].ToString(),
+                    fullname: row["fullname"].ToString(),
+                    position: row["position"] == DBNull.Value ? null : row["position"].ToString(),
+                    role: row["role"].ToString(),
+                    createdAt: createdAt,
+                    isActive: Convert.ToBoolean(row["is_active"])
+                );
+
                 var team = TeamService.GetUserTeam(id);
                 currentUserTeamId = team.Id;
                 currentUserTeamName = team.Name;
 
                 Console.WriteLine($"\nДобро пожаловать, {currentUser.GetFullname()}!");
                 Console.WriteLine($"ID: {currentUser.GetId()}, Роль: {currentUser.GetRole()}");
-                if (currentUserTeamId.HasValue)
-                {
-                    Console.WriteLine($"Команда: {currentUserTeamName}");
-                }
-                else
-                {
-                    Console.WriteLine("Вы не состоите ни в одной команде.");
-                }
+                Console.WriteLine(currentUserTeamId.HasValue ? $"Команда: {currentUserTeamName}" : "Вы не состоите ни в одной команде.");
             }
-            else
+            catch (Exception ex)
             {
-                Console.WriteLine("\nНеверный логин или пароль, либо аккаунт неактивен.");
+                Console.WriteLine($"\nОшибка при входе: {ex.Message}");
             }
         }
-
+        static void Logout()
+        {
+            currentUser = null;
+            currentUserTeamId = null;
+            currentUserTeamName = null;
+            Console.WriteLine("\nВы вышли из аккаунта.");
+        }
         static void CreateTask()
         {
             Console.Clear();
@@ -243,31 +284,26 @@ namespace JiraCopyProject
             else
             {
                 Console.Write("ID исполнителя (Enter - назначить на себя): ");
-                string assigneeInput = Console.ReadLine();
-                if (string.IsNullOrEmpty(assigneeInput))
-                {
+                string input = Console.ReadLine();
+                if (string.IsNullOrEmpty(input))
                     assigneeId = currentUser.GetId();
-                }
-                else
+                else if (!int.TryParse(input, out assigneeId))
                 {
-                    assigneeId = int.Parse(assigneeInput);
+                    Console.WriteLine("Неверный ID. Операция отменена.");
+                    return;
                 }
             }
 
             Console.Write("Срок выполнения (ГГГГ-ММ-ДД): ");
-            DateTime dueDate = DateTime.Parse(Console.ReadLine());
+            if (!DateTime.TryParseExact(Console.ReadLine(), "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out DateTime dueDate))
+            {
+                Console.WriteLine("Неверный формат даты.");
+                return;
+            }
 
             bool success = TaskService.CreateTask(title, description, assigneeId, currentUser.GetId(), dueDate);
-            if (success)
-            {
-                Console.WriteLine("\nЗадача успешно создана!");
-            }
-            else
-            {
-                Console.WriteLine("\nОшибка при создании задачи.");
-            }
+            Console.WriteLine(success ? "\nЗадача успешно создана!" : "\nОшибка при создании задачи.");
         }
-
         static void ShowUserTasks()
         {
             Console.Clear();
@@ -283,25 +319,14 @@ namespace JiraCopyProject
             Console.WriteLine("ID\tНазвание\t\tСтатус\t\tСрок\t\tТип");
             foreach (DataRow row in dt.Rows)
             {
-                string personal;
-                if (Convert.ToBoolean(row["is_personal"]))
-                {
-                    personal = "Личная";
-                }
-                else
-                {
-                    personal = "Командная";
-                }
-                Console.WriteLine($"{row["id"]}\t{row["title"]}\t\t{row["status_name"]}\t\t{FormatDate(row["due_date"])}\t{personal}");
+                string personal = Convert.ToBoolean(row["is_personal"]) ? "Личная" : "Командная";
+                Console.WriteLine($"{row["id"]}\t{row["title"]}\t\t{row["status_name"]}\t\t{FormatDateString(row["due_date"])}\t{personal}");
             }
 
-            Console.WriteLine("\nДля просмотра деталей введите ID задачи (0 - вернуться в меню): ");
+            Console.Write("\nВведите ID задачи для просмотра деталей (0 - назад): ");
             if (int.TryParse(Console.ReadLine(), out int taskId) && taskId > 0)
-            {
                 ShowTaskDetails(taskId);
-            }
         }
-
         static void ShowTaskDetails(int taskId)
         {
             Console.Clear();
@@ -311,8 +336,6 @@ namespace JiraCopyProject
             if (dtDetails.Rows.Count == 0)
             {
                 Console.WriteLine($"Задача с ID {taskId} не найдена.");
-                Console.WriteLine("\nНажмите любую клавишу для продолжения...");
-                Console.ReadKey();
                 return;
             }
 
@@ -320,9 +343,9 @@ namespace JiraCopyProject
             Console.WriteLine($"ID:          {row["id"]}");
             Console.WriteLine($"Название:    {row["title"]}");
             Console.WriteLine($"Описание:    {row["description"]}");
-            Console.WriteLine($"Срок сдачи:  {FormatDate(row["due_date"])}");
+            Console.WriteLine($"Срок:        {FormatDateString(row["due_date"])}");
             Console.WriteLine($"Статус:      {row["status_name"]}");
-            Console.WriteLine($"Кем создана: {row["creator_fullname"]}");
+            Console.WriteLine($"Создатель:   {row["creator_fullname"]}");
 
             DataTable dtSubtasks = TaskService.GetTaskSubtasks(taskId);
             Console.WriteLine("\n--- Подзадачи ---");
@@ -332,21 +355,16 @@ namespace JiraCopyProject
             }
             else
             {
-                Console.WriteLine("ID\tНазвание\t\tСтатус\t\tСрок");
                 foreach (DataRow sub in dtSubtasks.Rows)
                 {
-                    Console.WriteLine($"{sub["id"]}\t{sub["title"]}\t\t{sub["status_name"]}\t\t{FormatDate(sub["due_date"])}");
+                    Console.WriteLine($"  └─ {sub["title"]} (ID: {sub["id"]}, статус: {sub["status_name"]}, срок: {FormatDateString(sub["due_date"])})");
                 }
             }
-
-            Console.WriteLine("\nНажмите любую клавишу для продолжения...");
-            Console.ReadKey();
         }
-
         static void EditTask()
         {
             Console.Clear();
-            Console.WriteLine("=== Редактирование задачи (только созданные вами) ===\n");
+            Console.WriteLine("=== Редактирование задачи ===\n");
 
             DataTable tasksDt = TaskService.GetUserCreatedTasks(currentUser.GetId());
             if (tasksDt.Rows.Count == 0)
@@ -356,50 +374,53 @@ namespace JiraCopyProject
             }
 
             Console.WriteLine("Ваши задачи:");
-            Console.WriteLine("ID\tНазвание\t\tСрок");
+            Console.WriteLine("ID\tНазвание\t\tСрок\t\tСтатус");
             foreach (DataRow row in tasksDt.Rows)
             {
-                Console.WriteLine($"{row["id"]}\t{row["title"]}\t\t{FormatDate(row["due_date"])}");
+                Console.WriteLine($"{row["id"]}\t{row["title"]}\t\t{FormatDateString(row["due_date"])}\t{row["status_name"]}");
             }
 
-            Console.Write("\nВведите ID задачи для редактирования: ");
-            int taskId = int.Parse(Console.ReadLine());
+            Console.Write("\nВведите ID задачи для редактирования (0 - отмена): ");
+            if (!int.TryParse(Console.ReadLine(), out int taskId) || taskId == 0)
+            {
+                Console.WriteLine("Редактирование отменено.");
+                return;
+            }
 
             DataRow[] taskRows = tasksDt.Select($"id = {taskId}");
             if (taskRows.Length == 0)
             {
-                Console.WriteLine("Задача с таким ID не найдена или вы не являетесь её создателем.");
+                Console.WriteLine("Задача не найдена или вы не её создатель.");
                 return;
             }
 
-            Console.Write("Новое название (Enter - оставить без изменений): ");
+            Console.Write("Новое название (Enter - без изменений): ");
             string newTitle = Console.ReadLine();
-            Console.Write("Новое описание (Enter - оставить без изменений): ");
+            Console.Write("Новое описание (Enter - без изменений): ");
             string newDesc = Console.ReadLine();
-            Console.Write("Новый срок (ГГГГ-ММ-ДД, Enter - оставить без изменений): ");
+            Console.Write("Новый срок (ГГГГ-ММ-ДД, Enter - без изменений): ");
             string newDueDateStr = Console.ReadLine();
 
-            DateTime? newDueDate;
-            if (string.IsNullOrEmpty(newDueDateStr))
-            {
-                newDueDate = null;
-            }
-            else
-            {
-                newDueDate = DateTime.Parse(newDueDateStr);
-            }
+            DateTime? newDueDate = null;
+            if (!string.IsNullOrEmpty(newDueDateStr) && DateTime.TryParseExact(newDueDateStr, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out DateTime parsed))
+                newDueDate = parsed;
 
-            bool success = TaskService.UpdateTask(taskId, newTitle, newDesc, newDueDate, currentUser.GetId());
-            if (success)
-            {
-                Console.WriteLine("\nЗадача успешно обновлена!");
-            }
-            else
-            {
-                Console.WriteLine("\nОшибка при обновлении задачи.");
-            }
+            Console.Write("Причина изменения: ");
+            string reason = Console.ReadLine();
+            if (string.IsNullOrEmpty(reason)) reason = "Редактирование задачи";
+
+            bool success = TaskService.UpdateTask(
+                taskId,
+                string.IsNullOrEmpty(newTitle) ? null : newTitle,
+                string.IsNullOrEmpty(newDesc) ? null : newDesc,
+                null, null, null,
+                newDueDate,
+                currentUser.GetId(),
+                reason
+            );
+
+            Console.WriteLine(success ? "\nЗадача успешно обновлена!" : "\nОшибка при обновлении задачи.");
         }
-
         static void ChangeTaskStatus()
         {
             Console.Clear();
@@ -408,32 +429,19 @@ namespace JiraCopyProject
             DataTable dt = TaskService.GetUserTasks(currentUser.GetId());
             if (dt.Rows.Count == 0)
             {
-                Console.WriteLine("У вас нет задач, для которых можно изменить статус.");
+                Console.WriteLine("У вас нет доступных задач.");
                 return;
             }
 
             Console.WriteLine("Доступные задачи:");
-            Console.WriteLine("ID\tНазвание\t\tСтатус\t\tСрок\t\tТип");
+            Console.WriteLine("ID\tНазвание\t\tСтатус\t\tСрок");
             foreach (DataRow row in dt.Rows)
             {
-                string personal;
-                if (Convert.ToBoolean(row["is_personal"]))
-                {
-                    personal = "Личная";
-                }
-                else
-                {
-                    personal = "Командная";
-                }
-                Console.WriteLine($"{row["id"]}\t{row["title"]}\t\t{row["status_name"]}\t\t{FormatDate(row["due_date"])}\t{personal}");
+                Console.WriteLine($"{row["id"]}\t{row["title"]}\t\t{row["status_name"]}\t\t{FormatDateString(row["due_date"])}");
             }
 
-            Console.Write("\nВведите ID задачи для изменения статуса (0 - отмена): ");
-            if (!int.TryParse(Console.ReadLine(), out int taskId) || taskId == 0)
-            {
-                Console.WriteLine("Изменение статуса отменено.");
-                return;
-            }
+            Console.Write("\nВведите ID задачи (0 - отмена): ");
+            if (!int.TryParse(Console.ReadLine(), out int taskId) || taskId == 0) return;
 
             var (creatorId, assigneeId) = TaskService.GetTaskOwners(taskId);
             if (creatorId == 0)
@@ -443,22 +451,9 @@ namespace JiraCopyProject
             }
 
             string role = currentUser.GetRole();
-            bool canChange = false;
-            bool isCreator = (creatorId == currentUser.GetId());
-            bool isAssignee = (assigneeId.HasValue && assigneeId.Value == currentUser.GetId());
-
-            if (role == "Admin")
-            {
-                canChange = true;
-            }
-            else if (role == "TeamLead")
-            {
-                canChange = isCreator;
-            }
-            else if (role == "User")
-            {
-                canChange = isAssignee;
-            }
+            bool canChange = role == "Admin" ||
+                             (role == "TeamLead" && creatorId == currentUser.GetId()) ||
+                             (role == "User" && assigneeId == currentUser.GetId());
 
             if (!canChange)
             {
@@ -469,171 +464,34 @@ namespace JiraCopyProject
             DataTable statuses = TaskService.GetAvailableStatuses();
             Console.WriteLine("\nДоступные статусы:");
             foreach (DataRow row in statuses.Rows)
-            {
-                int statusId = Convert.ToInt32(row["id"]);
-                string statusName = row["name"].ToString();
-                if (role == "User" && !isCreator && (statusId == 4 || statusId == 5))
-                {
-                    continue;
-                }
-                Console.WriteLine($"{statusId}. {statusName}");
-            }
+                Console.WriteLine($"{row["id"]}. {row["name"]}");
 
             Console.Write("\nВыберите ID нового статуса: ");
-            int newStatusId = int.Parse(Console.ReadLine());
+            if (!int.TryParse(Console.ReadLine(), out int newStatusId)) return;
 
             Console.Write("Причина изменения: ");
             string reason = Console.ReadLine();
 
             bool success = TaskService.ChangeTaskStatus(taskId, newStatusId, currentUser.GetId(), reason);
-            if (success)
-            {
-                Console.WriteLine("\nСтатус успешно изменён!");
-            }
-            else
-            {
-                Console.WriteLine("\nОшибка при изменении статуса.");
-            }
+            Console.WriteLine(success ? "\nСтатус успешно изменён!" : "\nОшибка при изменении статуса.");
         }
-
-        static void CreateTeam()
-        {
-            Console.Clear();
-            Console.WriteLine("=== Создание команды ===\n");
-
-            Console.Write("Название команды: ");
-            string name = Console.ReadLine();
-            Console.Write("Описание: ");
-            string description = Console.ReadLine();
-
-            int? teamId = TeamService.CreateTeam(name, description, currentUser.GetId());
-            if (teamId.HasValue)
-            {
-                Console.WriteLine("\nКоманда успешно создана!");
-                currentUserTeamId = teamId.Value;
-                currentUserTeamName = name;
-            }
-            else
-            {
-                Console.WriteLine("\nОшибка при создании команды.");
-            }
-        }
-
-        static void ListAllUsers()
-        {
-            Console.Clear();
-            Console.WriteLine("=== Список всех пользователей ===\n");
-
-            DataTable dt = AccountService.GetAllUsers();
-            if (dt.Rows.Count == 0)
-            {
-                Console.WriteLine("Пользователи не найдены.");
-                return;
-            }
-
-            Console.WriteLine("ID\tЛогин\t\tФИО\t\t\tРоль\t\tАктивен");
-            Console.WriteLine(new string('-', 80));
-            foreach (DataRow row in dt.Rows)
-            {
-                string active;
-                if (Convert.ToBoolean(row["is_active"]))
-                {
-                    active = "Да";
-                }
-                else
-                {
-                    active = "Нет";
-                }
-                Console.WriteLine($"{row["id"]}\t{row["login"]}\t\t{row["fullname"]}\t\t{row["role"]}\t\t{active}");
-            }
-        }
-
-        static void AddUserToMyTeam()
-        {
-            Console.Clear();
-            Console.WriteLine("=== Добавление пользователя в мою команду ===\n");
-
-            if (!currentUserTeamId.HasValue)
-            {
-                Console.WriteLine("Вы не являетесь лидером команды или не состоите в команде.");
-                return;
-            }
-
-            if (!TeamService.IsUserTeamLead(currentUser.GetId(), currentUserTeamId.Value))
-            {
-                Console.WriteLine("Вы не являетесь лидером этой команды.");
-                return;
-            }
-
-            Console.Write("Введите ID пользователя для добавления: ");
-            int userId = int.Parse(Console.ReadLine());
-
-            bool success = TeamService.AddUserToTeam(currentUserTeamId.Value, userId, currentUser.GetId());
-            if (success)
-            {
-                Console.WriteLine("\nПользователь успешно добавлен в команду!");
-            }
-            else
-            {
-                Console.WriteLine("\nОшибка при добавлении пользователя.");
-            }
-        }
-
         static void AssignTaskToAnotherUser()
         {
             Console.Clear();
-            Console.WriteLine("=== Назначение задачи другому пользователю ===\n");
+            Console.WriteLine("=== Назначение задачи пользователю ===\n");
 
             Console.Write("Название: ");
             string title = Console.ReadLine();
             Console.Write("Описание: ");
             string description = Console.ReadLine();
-
             Console.Write("ID исполнителя: ");
-            int assigneeId = int.Parse(Console.ReadLine());
-
-            Console.Write("Срок выполнения (ГГГГ-ММ-ДД): ");
-            DateTime dueDate = DateTime.Parse(Console.ReadLine());
+            if (!int.TryParse(Console.ReadLine(), out int assigneeId)) return;
+            Console.Write("Срок (ГГГГ-ММ-ДД): ");
+            if (!DateTime.TryParseExact(Console.ReadLine(), "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out DateTime dueDate)) return;
 
             bool success = TaskService.CreateTask(title, description, assigneeId, currentUser.GetId(), dueDate);
-            if (success)
-            {
-                Console.WriteLine("\nЗадача успешно назначена!");
-            }
-            else
-            {
-                Console.WriteLine("\nОшибка при назначении задачи.");
-            }
+            Console.WriteLine(success ? "\nЗадача успешно назначена!" : "\nОшибка при назначении задачи.");
         }
-
-        static void TransferTeamLead()
-        {
-            Console.Clear();
-            Console.WriteLine("=== Передача управления командой ===\n");
-
-            Console.Write("Введите ID команды: ");
-            int teamId = int.Parse(Console.ReadLine());
-
-            Console.Write("Введите ID нового лидера (должен иметь роль TeamLead): ");
-            int newLeadId = int.Parse(Console.ReadLine());
-
-            bool success = TeamService.TransferTeamLead(teamId, newLeadId, currentUser.GetId(), currentUser.GetRole());
-            if (success)
-            {
-                Console.WriteLine("\nУправление командой успешно передано!");
-                if (currentUserTeamId.HasValue && currentUserTeamId.Value == teamId)
-                {
-                    var team = TeamService.GetUserTeam(currentUser.GetId());
-                    currentUserTeamId = team.Id;
-                    currentUserTeamName = team.Name;
-                }
-            }
-            else
-            {
-                Console.WriteLine("\nОшибка при передаче управления. Проверьте, что команда существует, а новый лидер имеет роль TeamLead.");
-            }
-        }
-
         static void AddTeamTask()
         {
             Console.Clear();
@@ -646,260 +504,488 @@ namespace JiraCopyProject
                 return;
             }
 
-            Console.WriteLine("Выберите команду:");
+            Console.WriteLine("Ваши команды:");
             for (int i = 0; i < teams.Rows.Count; i++)
-            {
                 Console.WriteLine($"{i + 1}. {teams.Rows[i]["name"]} (ID: {teams.Rows[i]["id"]})");
-            }
-            Console.Write("Введите номер: ");
-            if (!int.TryParse(Console.ReadLine(), out int choice) || choice < 1 || choice > teams.Rows.Count)
-            {
-                Console.WriteLine("Неверный выбор.");
-                return;
-            }
+
+            Console.Write("Выберите номер: ");
+            if (!int.TryParse(Console.ReadLine(), out int choice) || choice < 1 || choice > teams.Rows.Count) return;
+
             int teamId = Convert.ToInt32(teams.Rows[choice - 1]["id"]);
-            string teamName = teams.Rows[choice - 1]["name"].ToString();
 
             Console.Write("Название задачи: ");
             string title = Console.ReadLine();
             Console.Write("Описание: ");
             string description = Console.ReadLine();
-            Console.Write("Срок выполнения (ГГГГ-ММ-ДД): ");
-            DateTime dueDate = DateTime.Parse(Console.ReadLine());
+            Console.Write("Срок (ГГГГ-ММ-ДД): ");
+            if (!DateTime.TryParseExact(Console.ReadLine(), "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out DateTime dueDate)) return;
 
             bool success = TaskService.CreateTeamTask(title, description, teamId, currentUser.GetId(), dueDate);
-            if (success)
+            Console.WriteLine(success ? "\nЗадача для команды успешно создана!" : "\nОшибка при создании задачи.");
+        }
+        static void CreateTeam()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Создание команды ===\n");
+
+            Console.Write("Название: ");
+            string name = Console.ReadLine();
+            Console.Write("Описание: ");
+            string description = Console.ReadLine();
+
+            int? teamId = TeamService.CreateTeam(name, description, currentUser.GetId());
+            if (teamId.HasValue)
             {
-                Console.WriteLine($"\nЗадача для команды \"{teamName}\" успешно создана!");
+                Console.WriteLine("\nКоманда успешно создана!");
+                currentUserTeamId = teamId;
+                currentUserTeamName = name;
             }
             else
+                Console.WriteLine("\nОшибка при создании команды.");
+        }
+        static void ListAllUsers()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Список пользователей ===\n");
+
+            DataTable dt = AccountService.GetAllUsers();
+            if (dt.Rows.Count == 0)
             {
-                Console.WriteLine("\nОшибка при создании задачи.");
+                Console.WriteLine("Пользователи не найдены.");
+                return;
+            }
+
+            Console.WriteLine("ID\tЛогин\t\tEmail\t\t\tРоль\t\tАктивен");
+            Console.WriteLine(new string('-', 90));
+            foreach (DataRow row in dt.Rows)
+            {
+                string email = row["email"].ToString();
+                if (email.Length > 20) email = email.Substring(0, 17) + "...";
+                Console.WriteLine($"{row["id"]}\t{row["login"]}\t\t{email}\t{row["role"]}\t\t{(Convert.ToBoolean(row["is_active"]) ? "Да" : "Нет")}");
             }
         }
+        static void AddUserToMyTeam()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Добавление пользователя в команду ===\n");
 
+            string role = currentUser.GetRole();
+            DataTable teams = role == "Admin" ? TeamService.GetAllTeams() : TeamService.GetUserLeadTeams(currentUser.GetId());
+
+            if (teams.Rows.Count == 0)
+            {
+                Console.WriteLine("Нет доступных команд.");
+                return;
+            }
+
+            Console.WriteLine("Доступные команды:");
+            Console.WriteLine("ID\tНазвание\t\tОписание");
+            foreach (DataRow row in teams.Rows)
+            {
+                string desc = row["description"] == DBNull.Value ? "" : row["description"].ToString();
+                if (desc.Length > 30) desc = desc.Substring(0, 27) + "...";
+                Console.WriteLine($"{row["id"]}\t{row["name"]}\t\t{desc}");
+            }
+
+            Console.Write("\nВведите ID команды (0 - отмена): ");
+            if (!int.TryParse(Console.ReadLine(), out int teamId) || teamId == 0) return;
+
+            bool hasAccess = role == "Admin";
+            if (!hasAccess)
+            {
+                foreach (DataRow row in teams.Rows)
+                    if (Convert.ToInt32(row["id"]) == teamId) { hasAccess = true; break; }
+            }
+
+            if (!hasAccess)
+            {
+                Console.WriteLine("У вас нет прав на добавление в эту команду.");
+                return;
+            }
+
+            Console.Write("Введите email пользователя: ");
+            string email = Console.ReadLine()?.Trim();
+            if (string.IsNullOrEmpty(email)) return;
+
+            string findUserSql = "SELECT id, login, fullname FROM \"Accounts\" WHERE email = @email AND is_active = true";
+            DataTable userDt = Database.Database.ExecuteQuery(findUserSql, new[] { new NpgsqlParameter("@email", email) });
+
+            if (userDt.Rows.Count == 0)
+            {
+                Console.WriteLine($"Пользователь с email '{email}' не найден.");
+                return;
+            }
+
+            int userId = Convert.ToInt32(userDt.Rows[0]["id"]);
+            Console.WriteLine($"\nНайден: {userDt.Rows[0]["fullname"]} ({userDt.Rows[0]["login"]})");
+            Console.Write("Добавить в команду? (y/n): ");
+            if (Console.ReadLine()?.Trim().ToLower() != "y") return;
+
+            bool success = TeamService.AddUserToTeam(teamId, userId, currentUser.GetId());
+            Console.WriteLine(success ? "\nПользователь добавлен!" : "\nОшибка при добавлении.");
+        }
+        static void TransferTeamLead()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Передача лидерства ===\n");
+
+            DataTable teams = TeamService.GetAllTeams();
+            if (teams.Rows.Count == 0)
+            {
+                Console.WriteLine("Нет команд.");
+                return;
+            }
+
+            Console.WriteLine("Команды:");
+            foreach (DataRow row in teams.Rows)
+                Console.WriteLine($"ID: {row["id"]}, Название: {row["name"]}, Лидер ID: {row["team_lead_id"]}");
+
+            Console.Write("\nID команды: ");
+            if (!int.TryParse(Console.ReadLine(), out int teamId)) return;
+            Console.Write("ID нового лидера (роль TeamLead): ");
+            if (!int.TryParse(Console.ReadLine(), out int newLeadId)) return;
+
+            bool success = TeamService.TransferTeamLead(teamId, newLeadId, currentUser.GetId(), currentUser.GetRole());
+            Console.WriteLine(success ? "\nЛидерство передано!" : "\nОшибка при передаче.");
+        }
+        static void ManageTeams()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Управление командами ===\n");
+            Console.WriteLine("1. Все команды");
+            Console.WriteLine("2. Участники команды");
+            Console.WriteLine("3. Удалить команду");
+            Console.WriteLine("0. Назад");
+            Console.Write("Выбор: ");
+
+            if (int.TryParse(Console.ReadLine(), out int choice))
+            {
+                switch (choice)
+                {
+                    case 1: ShowAllTeams(); break;
+                    case 2: ShowTeamMembers(); break;
+                    case 3: ShowDeletingTeam(); break;
+                }
+            }
+        }
         static void ShowAllTeams()
         {
             Console.Clear();
             string role = currentUser.GetRole();
-            DataTable teams = new DataTable();
+            DataTable teams = role == "Admin" ? TeamService.GetAllTeams() : TeamService.GetUserLeadTeams(currentUser.GetId());
 
-            //Для Admin
-            if (role == "Admin")
+            if (teams.Rows.Count == 0)
             {
-                //Все команды сохранены в Виртуальную таблицу
-                teams = TeamService.GetAllTeams();
-
-                if (teams.Rows.Count == 0)
-                {
-                    Console.WriteLine("Команды пустые");
-                    return;
-                }
-
-                Console.WriteLine("=== Список всех команд ===\n");
-
-                Console.WriteLine("ID\tLeader ID\t\tName");
-                //Для каждой строки в таблице Teams(уточняю, что нужны СТРОКИ)
-                foreach (DataRow row in teams.Rows)
-                {
-                    Console.WriteLine($"{row["id"]}\t{row["team_lead_id"]}\t{row["name"]}");
-                }
-            }
-            //Для TeamLead
-            else if (role == "TeamLead")
-            {
-                teams = TeamService.GetUserLeadTeams(currentUser.GetId());
-
-                if (teams.Rows.Count == 0)
-                {
-                    Console.WriteLine("Команды пустые");
-                    return;
-                }
-
-                Console.WriteLine("=== Список всех команд ===\n");
-                Console.WriteLine("ID\tName");
-                foreach (DataRow row in teams.Rows)
-                {
-                    Console.WriteLine($"{row["id"]}\t{row["name"]}");
-                }
+                Console.WriteLine("Нет доступных команд.");
+                Console.ReadKey();
+                return;
             }
 
-            Console.WriteLine("\nНажмите любую клавишу для продолжения...");
+            Console.WriteLine("=== Список команд ===\n");
+            foreach (DataRow row in teams.Rows)
+                Console.WriteLine($"ID: {row["id"]}\t{row["name"]}\tЛидер ID: {row["team_lead_id"]}");
             Console.ReadKey();
         }
-
         static void ShowTeamMembers()
         {
             Console.Clear();
             string role = currentUser.GetRole();
-            DataTable teams = new DataTable();
-            DataTable teamMembers = new DataTable();
+            DataTable teams = role == "Admin" ? TeamService.GetAllTeams() : TeamService.GetUserLeadTeams(currentUser.GetId());
 
-            //Для Admin
-            if (role == "Admin")
+            if (teams.Rows.Count == 0)
             {
-                //Все команды сохранены в Виртуальную таблицу
-                teams = TeamService.GetAllTeams();
-
-                if (teams.Rows.Count == 0)
-                {
-                    Console.WriteLine("Команды пустые");
-                    return;
-                }
-
-                Console.WriteLine("=== Список всех команд ===\n");
-
-                Console.WriteLine("ID\tLeader ID\t\tName");
-                //Для каждой строки в таблице Teams(уточняю, что нужны СТРОКИ)
-                foreach (DataRow row in teams.Rows)
-                {
-                    Console.WriteLine($"{row["id"]}\t{row["team_lead_id"]}\t{row["name"]}");
-                }
-
-                Console.WriteLine("\n\n\n");
-                Console.WriteLine("Введите ID конманды, для просмотра списка сотрудников:");
-                int choicenTeam = int.Parse(Console.ReadLine());
-                List<int> id_list = new List<int>();
-
-                foreach (DataRow row in teams.Rows)
-                { 
-                    string currentID = $"{row["id"]}"; 
-                    id_list.Add(int.Parse(currentID));
-                }
-
-                if (id_list.Contains(choicenTeam))
-                {
-                    teamMembers = Logic.Services.TeamService.GetTeamMembers(choicenTeam);
-
-                    Console.WriteLine($" === Все участники команды {choicenTeam} ===");
-                    Console.WriteLine("Login\tFullname\tRole");
-                    foreach (DataRow row in teamMembers.Rows)
-                    {
-                        Console.WriteLine($"{row["login"]}\t{row["fullname"]}\t{row["role"]}");
-                    }
-                }
-               
-
-            }
-            //Для TeamLead
-            else if (role == "TeamLead")
-            {
-                teams = TeamService.GetUserLeadTeams(currentUser.GetId());
-
-                if (teams.Rows.Count == 0)
-                {
-                    Console.WriteLine("Команды пустые");
-                    return;
-                }
-
-                Console.WriteLine("=== Список всех команд ===\n");
-                Console.WriteLine("ID\tName");
-                foreach (DataRow row in teams.Rows)
-                {
-                    Console.WriteLine($"{row["id"]}\t{row["name"]}");
-                }
-
-                Console.WriteLine("\n\n\n");
-                Console.WriteLine("Введите ID конманды, для просмотра списка сотрудников:");
-                int choicenTeam = int.Parse(Console.ReadLine());
-                List<int> id_list = new List<int>();
-
-                foreach (DataRow row in teams.Rows)
-                {
-                    string currentID = $"{row["id"]}";
-                    id_list.Add(int.Parse(currentID));
-                }
-
-                if (id_list.Contains(choicenTeam))
-                {
-                    teamMembers = Logic.Services.TeamService.GetTeamMembers(choicenTeam);
-
-                    Console.WriteLine($" === Все участники команды {choicenTeam} ===");
-                    Console.WriteLine("Login\tFullname\tRole");
-                    foreach (DataRow row in teamMembers.Rows)
-                    {
-                        Console.WriteLine($"{row["login"]}\t{row["fullname"]}\t{row["role"]}");
-                    }
-                }
+                Console.WriteLine("Нет доступных команд.");
+                Console.ReadKey();
+                return;
             }
 
-            Console.WriteLine("\nНажмите любую клавишу для продолжения...");
+            Console.WriteLine("Команды:");
+            foreach (DataRow row in teams.Rows)
+                Console.WriteLine($"ID: {row["id"]}, Название: {row["name"]}");
+
+            Console.Write("\nID команды: ");
+            if (!int.TryParse(Console.ReadLine(), out int teamId)) return;
+
+            DataTable members = TeamService.GetTeamMembers(teamId);
+            if (members.Rows.Count == 0)
+                Console.WriteLine("Нет участников.");
+            else
+                foreach (DataRow row in members.Rows)
+                    Console.WriteLine($"{row["login"]}\t{row["fullname"]}\t{row["role"]}");
             Console.ReadKey();
         }
-
         static void ShowDeletingTeam()
         {
-            DataTable teams = new DataTable();
             Console.Clear();
+            string role = currentUser.GetRole();
+            DataTable teams = role == "Admin" ? TeamService.GetAllTeams() : TeamService.GetUserLeadTeams(currentUser.GetId());
 
-            if (currentUser.GetRole() == "Admin")
+            if (teams.Rows.Count == 0)
             {
-                //Все команды сохранены в Виртуальную таблицу
-                teams = TeamService.GetAllTeams();
-
-                if (teams.Rows.Count == 0)
-                {
-                    Console.WriteLine("Команды пустые");
-                    return;
-                }
-
-                Console.WriteLine("=== Список всех команд ===\n");
-
-                Console.WriteLine("ID\tLeader ID\t\tName");
-                //Для каждой строки в таблице Teams(уточняю, что нужны СТРОКИ)
-                foreach (DataRow row in teams.Rows)
-                {
-                    Console.WriteLine($"{row["id"]}\t{row["team_lead_id"]}\t{row["name"]}");
-                }
-            }
-            //Для TeamLead
-            else if (currentUser.GetRole() == "TeamLead")
-            {
-                teams = TeamService.GetUserLeadTeams(currentUser.GetId());
-
-                if (teams.Rows.Count == 0)
-                {
-                    Console.WriteLine("Команды пустые");
-                    return;
-                }
-
-                Console.WriteLine("=== Список всех команд ===\n");
-                Console.WriteLine("ID\tName");
-                foreach (DataRow row in teams.Rows)
-                {
-                    Console.WriteLine($"{row["id"]}\t{row["name"]}");
-                }
-            }
-
-
-            //Отобразить команды N пользователя или под админкой - всё.
-
-            Console.WriteLine("\n=== Раздел удаления команды ===\n");
-            Console.WriteLine("Напишите ID команды:");
-            int choicenTeam = int.Parse(Console.ReadLine());
-
-            bool Status = Logic.Services.TeamService.DeleteTeam(choicenTeam, currentUser.GetId(), currentUser.GetRole());
-
-            if (!Status)
-            {
-                Console.WriteLine("При удалении произошла ошибка. Команда не удалилась.");
-                Console.WriteLine("\nНажмите любую клавишу для продолжения...");
+                Console.WriteLine("Нет доступных команд.");
                 Console.ReadKey();
+                return;
+            }
+
+            Console.WriteLine("Команды для удаления:");
+            foreach (DataRow row in teams.Rows)
+                Console.WriteLine($"ID: {row["id"]}, Название: {row["name"]}");
+
+            Console.Write("\nID команды: ");
+            if (!int.TryParse(Console.ReadLine(), out int teamId)) return;
+
+            Console.Write("Уверены? (y/n): ");
+            if (Console.ReadLine()?.Trim().ToLower() != "y") return;
+
+            bool success = TeamService.DeleteTeam(teamId, currentUser.GetId(), role);
+            Console.WriteLine(success ? "Команда удалена." : "Ошибка при удалении.");
+            Console.ReadKey();
+        }
+        static void CopyTaskUI()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Копирование задачи ===\n");
+            Console.Write("ID задачи: ");
+            if (!int.TryParse(Console.ReadLine(), out int taskId)) return;
+
+            var owners = TaskService.GetTaskOwners(taskId);
+            if (owners.CreatorId == 0)
+            {
+                Console.WriteLine("Задача не найдена.");
+                return;
+            }
+
+            Console.Write("Новый исполнитель (Enter - тот же): ");
+            string input = Console.ReadLine();
+            int newAssigneeId = string.IsNullOrEmpty(input) ? (owners.AssigneeId ?? 0) : int.Parse(input);
+
+            Console.Write("Копировать подзадачи? (y/n): ");
+            bool copySubtasks = Console.ReadLine()?.Trim().ToLower() == "y";
+
+            int? newId = TaskService.CopyTask(taskId, currentUser.GetId(), newAssigneeId, copySubtasks);
+            Console.WriteLine(newId.HasValue ? $"Скопировано. Новый ID: {newId}" : "Ошибка копирования.");
+        }
+        static void CreateSubtaskUI()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Создание подзадачи ===\n");
+            Console.Write("ID родительской задачи: ");
+            if (!int.TryParse(Console.ReadLine(), out int parentId)) return;
+            Console.Write("Название: ");
+            string title = Console.ReadLine();
+            Console.Write("Описание: ");
+            string desc = Console.ReadLine();
+            Console.Write("ID исполнителя: ");
+            if (!int.TryParse(Console.ReadLine(), out int assigneeId)) return;
+            Console.Write("Срок (ГГГГ-ММ-ДД): ");
+            if (!DateTime.TryParseExact(Console.ReadLine(), "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out DateTime dueDate)) return;
+
+            bool success = TaskService.CreateSubtask(parentId, title, desc, assigneeId, currentUser.GetId(), dueDate);
+            Console.WriteLine(success ? "Подзадача создана!" : "Ошибка.");
+        }
+        static void ShowSubtaskTree()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Дерево подзадач ===\n");
+            Console.Write("ID задачи: ");
+            if (!int.TryParse(Console.ReadLine(), out int taskId)) return;
+            DisplaySubtasks(taskId, 0);
+            Console.ReadKey();
+        }
+        static void DisplaySubtasks(int taskId, int level)
+        {
+            DataTable dt = TaskService.GetTaskSubtasks(taskId);
+            string indent = new string(' ', level * 2);
+            foreach (DataRow row in dt.Rows)
+            {
+                Console.WriteLine($"{indent}├─ {row["title"]} (ID: {row["id"]}, {row["status_name"]}, {FormatDateString(row["due_date"])})");
+                DisplaySubtasks(Convert.ToInt32(row["id"]), level + 1);
+            }
+        }
+        static void ManageComments()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Комментарии ===\n");
+            Console.Write("ID задачи: ");
+            if (!int.TryParse(Console.ReadLine(), out int taskId)) return;
+
+            Console.WriteLine("1. Добавить\n2. Просмотреть");
+            if (Console.ReadLine() == "1")
+            {
+                Console.Write("Комментарий: ");
+                bool ok = TaskService.AddComment(taskId, currentUser.GetId(), Console.ReadLine());
+                Console.WriteLine(ok ? "Добавлен." : "Ошибка.");
             }
             else
             {
-                Console.WriteLine($"Команда ID = {choicenTeam} | Была удалена успешно.");
-                Console.WriteLine("\nНажмите любую клавишу для продолжения...");
-                Console.ReadKey();
+                DataTable dt = TaskService.GetComments(taskId);
+                if (dt.Rows.Count == 0)
+                {
+                    Console.WriteLine("Нет комментариев.");
+                }
+                else
+                {
+                    foreach (DataRow row in dt.Rows)
+                    {
+                        Console.WriteLine($"{row["author_name"]} ({FormatDateString(row["created_at"])}): {row["comment"]}");
+                    }
+                }
             }
         }
+        static void ManageTags()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Теги ===\n");
+            Console.WriteLine("1. Создать\n2. Назначить\n3. Теги задачи\n4. Задачи по тегу");
+            string choice = Console.ReadLine();
 
-            static void Logout()
+            switch (choice)
             {
-                currentUser = null;
-                currentUserTeamId = null;
-                currentUserTeamName = null;
-                Console.WriteLine("\nВы вышли из аккаунта.");
+                case "1":
+                    Console.Write("Название: ");
+                    string name = Console.ReadLine();
+                    Console.Write("Цвет (#HEX): ");
+                    string color = Console.ReadLine();
+                    if (string.IsNullOrEmpty(color)) color = "#FFFFFF";
+                    Console.WriteLine(TaskService.CreateTag(name, color) ? "Создан." : "Ошибка.");
+                    break;
+                case "2":
+                    Console.Write("ID задачи: ");
+                    if (int.TryParse(Console.ReadLine(), out int tId))
+                    {
+                        Console.Write("ID тега: ");
+                        if (int.TryParse(Console.ReadLine(), out int tagId))
+                            Console.WriteLine(TaskService.AddTagToTask(tId, tagId) ? "Назначен." : "Ошибка.");
+                    }
+                    break;
+                case "3":
+                    Console.Write("ID задачи: ");
+                    if (int.TryParse(Console.ReadLine(), out int taskId))
+                    {
+                        DataTable tags = TaskService.GetTaskTags(taskId);
+                        if (tags.Rows.Count == 0) Console.WriteLine("Нет тегов.");
+                        else foreach (DataRow row in tags.Rows) Console.WriteLine($"{row["name"]} ({row["color"]})");
+                    }
+                    break;
+                case "4":
+                    Console.Write("ID тега: ");
+                    if (int.TryParse(Console.ReadLine(), out int tag))
+                    {
+                        DataTable tasks = TaskService.GetTasksByTag(tag);
+                        if (tasks.Rows.Count == 0)
+                            Console.WriteLine("Нет задач.");
+                        else
+                            foreach (DataRow row in tasks.Rows)
+                            {
+                                Console.WriteLine($"{row["id"]}\t{row["title"]}\t{FormatDateString(row["due_date"])}");
+                            }
+                    }
+                    break;
             }
+        }
+        static void FiltersMenu()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Фильтры и поиск ===\n");
+            Console.WriteLine("1. Поиск по тексту");
+            Console.WriteLine("2. По статусу");
+            Console.WriteLine("3. Просроченные");
+            Console.Write("Выбор: ");
+            string choice = Console.ReadLine();
+
+            if (choice == "1")
+            {
+                Console.Write("Поиск: ");
+                string query = Console.ReadLine();
+                DataTable dt = TaskService.SearchTasks(query, currentUser.GetId(), currentUser.GetRole());
+
+                if (dt.Rows.Count == 0)
+                {
+                    Console.WriteLine("Ничего не найдено.");
+                    return;
+                }
+
+                Console.WriteLine("\nID\tНазвание\t\tСтатус\t\tСрок\t\tИсполнитель\tРелевантность");
+                foreach (DataRow row in dt.Rows)
+                {
+                    string assignee = row["assignee_name"] == DBNull.Value ? "—" : row["assignee_name"].ToString();
+                    string relevance = row["relevance"] != DBNull.Value ? $"{Convert.ToDouble(row["relevance"]):F2}" : "—";
+                    Console.WriteLine($"{row["id"]}\t{row["title"]}\t\t{row["status_name"]}\t\t{FormatDateString(row["due_date"])}\t{assignee}\t{relevance}");
+                }
+            }
+            else if (choice == "2")
+            {
+                DataTable statuses = TaskService.GetAvailableStatuses();
+                Console.WriteLine("Статусы:");
+                foreach (DataRow row in statuses.Rows)
+                    Console.WriteLine($"{row["id"]}. {row["name"]}");
+                Console.Write("ID статуса: ");
+                if (int.TryParse(Console.ReadLine(), out int statusId))
+                {
+                    DataTable tasks = TaskService.GetTasksByStatus(statusId);
+                    if (tasks.Rows.Count == 0)
+                        Console.WriteLine("Нет задач.");
+                    else
+                        foreach (DataRow row in tasks.Rows)
+                        {
+                            Console.WriteLine($"{row["id"]}\t{row["title"]}\t{row["assignee_name"]}\t{FormatDateString(row["due_date"])}");
+                        }
+                }
+            }
+            else if (choice == "3")
+            {
+                DataTable dt = TaskService.GetOverdueTasks(currentUser.GetId());
+                if (dt.Rows.Count == 0)
+                    Console.WriteLine("Нет просроченных задач.");
+                else
+                    foreach (DataRow row in dt.Rows)
+                    {
+                        Console.WriteLine($"{row["id"]}\t{row["title"]}\t{row["assignee_name"]}\t{FormatDateString(row["due_date"])}\t+{row["overdue_days"]} дн.");
+                    }
+            }
+        }
+        static void HistoryMenu()
+        {
+            Console.Clear();
+            Console.WriteLine("=== История изменений ===\n");
+            Console.Write("ID задачи: ");
+            if (!int.TryParse(Console.ReadLine(), out int taskId)) return;
+
+            Console.WriteLine("1. Статусы\n2. Дедлайны");
+            string choice = Console.ReadLine();
+
+            if (choice == "1")
+            {
+                DataTable dt = TaskService.GetTaskStatusHistory(taskId);
+                if (dt.Rows.Count == 0)
+                    Console.WriteLine("Нет записей.");
+                else
+                    foreach (DataRow row in dt.Rows)
+                    {
+                        Console.WriteLine($"{row["old_status"]} → {row["new_status"]} ({row["changed_by"]}, {FormatDateString(row["changed_at"])}): {row["reason"]}");
+                    }
+            }
+            else if (choice == "2")
+            {
+                DataTable dt = TaskService.GetTaskDeadlineHistory(taskId);
+                if (dt.Rows.Count == 0)
+                    Console.WriteLine("Нет записей.");
+                else
+                    foreach (DataRow row in dt.Rows)
+                    {
+                        Console.WriteLine($"{FormatDateString(row["old_due_date"])} → {FormatDateString(row["new_due_date"])} ({row["changed_by"]}, {FormatDateString(row["changed_at"])}): {row["reason"]}");
+                    }
+            }
+        }
+        static void ShowUserStats()
+        {
+            var stats = AccountService.GetUserStats(currentUser.GetId());
+            Console.Clear();
+            Console.WriteLine("=== Моя статистика ===\n");
+            Console.WriteLine($"Всего задач:      {stats.Total}");
+            Console.WriteLine($"Выполнено:        {stats.Completed}");
+            Console.WriteLine($"Просрочено:       {stats.Overdue}");
+            Console.ReadKey();
         }
     }
+}

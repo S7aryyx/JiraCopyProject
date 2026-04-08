@@ -21,16 +21,8 @@ namespace JiraCopyProject.Logic.Services
                 new NpgsqlParameter("@position", string.IsNullOrEmpty(position) ? DBNull.Value : (object)position)
             };
             object result = Database.Database.ExecuteScalar(sql, parameters);
-            if (result == null)
-            {
-                return 0;
-            }
-            else
-            {
-                return Convert.ToInt32(result);
-            }
+            return result == null ? 0 : Convert.ToInt32(result);
         }
-
         public static (int Id, string Role, int Status) Authenticate(string login, string clearPassword)
         {
             string sql = "SELECT id, password_hash, role, is_active FROM \"Accounts\" WHERE login = @login";
@@ -40,7 +32,6 @@ namespace JiraCopyProject.Logic.Services
             {
                 return (0, "", 0);
             }
-
             DataRow row = dt.Rows[0];
             string storedHash = row["password_hash"].ToString();
             bool isActive = Convert.ToBoolean(row["is_active"]);
@@ -56,17 +47,12 @@ namespace JiraCopyProject.Logic.Services
 
             return (Convert.ToInt32(row["id"]), row["role"].ToString(), 1);
         }
-
         public static Account GetAccountById(int id)
         {
-            string sql = "SELECT * FROM \"Accounts\" WHERE id = @id";
-            var param = new NpgsqlParameter("@id", id);
+            string sql = "SELECT * FROM \"GetAccountById\"(@p_id)";
+            var param = new NpgsqlParameter("@p_id", id);
             DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
-            if (dt.Rows.Count == 0)
-            {
-                return null;
-            }
-
+            if (dt.Rows.Count == 0) return null;
             DataRow row = dt.Rows[0];
             string position = row["position"] == DBNull.Value ? null : row["position"].ToString();
             object createdObj = row["created_at"];
@@ -83,11 +69,19 @@ namespace JiraCopyProject.Logic.Services
                 Convert.ToBoolean(row["is_active"])
             );
         }
-
         public static DataTable GetAllUsers()
         {
-            string sql = "SELECT id, login, fullname, role, is_active FROM \"Accounts\" ORDER BY id";
-            return Database.Database.ExecuteQuery(sql);
+            return Database.Database.ExecuteQuery("SELECT * FROM \"GetAllUsers\"()");
+        }
+        public static (long Total, long Completed, long Overdue) GetUserStats(int userId)
+        {
+            string sql = "SELECT * FROM \"GetUserStats\"(@p_user_id)";
+            var param = new NpgsqlParameter("@p_user_id", userId);
+            DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
+            if (dt.Rows.Count == 0) return (0, 0, 0);
+            return (Convert.ToInt64(dt.Rows[0]["total_tasks"]),
+                    Convert.ToInt64(dt.Rows[0]["completed_tasks"]),
+                    Convert.ToInt64(dt.Rows[0]["overdue_tasks"]));
         }
     }
 }
