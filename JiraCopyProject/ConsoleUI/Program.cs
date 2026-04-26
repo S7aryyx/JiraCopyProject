@@ -97,7 +97,6 @@ namespace JiraCopyProject
             }
             Console.WriteLine("До свидания!");
         }
-
         static void ShowMainMenu()
         {
             Console.WriteLine("======================================");
