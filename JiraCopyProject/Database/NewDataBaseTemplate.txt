@@ -1,0 +1,924 @@
+-- Создание базы данных JiraCopy_pt2 с разделением на схемы
+
+
+-- Часть 1. Создание базы данных
+--CREATE DATABASE "JiraCopy_pt2"
+--    WITH OWNER = postgres;
+    
+
+-- Часть 2. Создание схем
+CREATE SCHEMA IF NOT EXISTS accounts;
+CREATE SCHEMA IF NOT EXISTS teams;
+CREATE SCHEMA IF NOT EXISTS statuses;
+CREATE SCHEMA IF NOT EXISTS tasks;
+CREATE SCHEMA IF NOT EXISTS comments;
+CREATE SCHEMA IF NOT EXISTS audit;
+CREATE SCHEMA IF NOT EXISTS tags;
+CREATE SCHEMA IF NOT EXISTS public;
+
+-- Установка расширения для триграмм (в схеме public)
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+-- Часть 3. Таблицы и индексы по схемам
+
+
+-- Схема accounts
+
+CREATE TABLE accounts."Accounts" (
+                                     id            serial PRIMARY KEY,
+                                     login         varchar(100) NOT NULL UNIQUE,
+                                     password_hash varchar(255) NOT NULL,
+                                     email         varchar(150) NOT NULL UNIQUE,
+                                     fullname      text NOT NULL,
+                                     "position"    varchar(100),
+                                     "role"        varchar(20),
+                                     created_at    date DEFAULT CURRENT_TIMESTAMP,
+                                     is_active     boolean DEFAULT true
+);
+ALTER TABLE accounts."Accounts" OWNER TO postgres;
+CREATE INDEX idx_accounts_login ON accounts."Accounts" (login);
+CREATE INDEX idx_accounts_email ON accounts."Accounts" (email);
+CREATE INDEX idx_accounts_role  ON accounts."Accounts" ("role");
+
+-- ---------------------------------------------------------
+-- Схема teams
+-- ---------------------------------------------------------
+CREATE TABLE teams."Teams" (
+                               id           serial PRIMARY KEY,
+                               name         varchar(100) NOT NULL,
+                               description  text,
+                               team_lead_id integer REFERENCES accounts."Accounts"(id) ON DELETE SET NULL,
+                               created_at   date DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE teams."Teams" OWNER TO postgres;
+CREATE INDEX idx_teams_team_lead_id ON teams."Teams" (team_lead_id);
+
+CREATE TABLE teams."TeamMembers" (
+                                     team_id    integer NOT NULL REFERENCES teams."Teams"(id) ON DELETE CASCADE,
+                                     account_id integer NOT NULL REFERENCES accounts."Accounts"(id) ON DELETE CASCADE,
+                                     created_at date DEFAULT CURRENT_TIMESTAMP,
+                                     is_active  boolean DEFAULT true,
+                                     PRIMARY KEY (team_id, account_id)
+);
+ALTER TABLE teams."TeamMembers" OWNER TO postgres;
+
+-- ---------------------------------------------------------
+-- Схема statuses
+-- ---------------------------------------------------------
+CREATE TABLE statuses."Statuses" (
+                                     id          serial PRIMARY KEY,
+                                     name        varchar(50) NOT NULL UNIQUE,
+                                     code        varchar(50) NOT NULL UNIQUE,
+                                     description text,
+                                     sort_order  integer DEFAULT 0
+);
+ALTER TABLE statuses."Statuses" OWNER TO postgres;
+CREATE INDEX idx_statuses_code ON statuses."Statuses" (code);
+
+-- ---------------------------------------------------------
+-- Схема tasks (основная таблица задач)
+-- ---------------------------------------------------------
+CREATE TABLE tasks."Tasks" (
+                               id             serial PRIMARY KEY,
+                               title          varchar(200) NOT NULL,
+                               description    text,
+                               status_id      integer NOT NULL REFERENCES statuses."Statuses"(id),
+                               create_date    date DEFAULT CURRENT_TIMESTAMP,
+                               due_date       date NOT NULL,
+                               team_id        integer REFERENCES teams."Teams"(id) ON DELETE SET NULL,
+                               assignee_id    integer REFERENCES accounts."Accounts"(id) ON DELETE SET NULL,
+                               creator_id     integer NOT NULL REFERENCES accounts."Accounts"(id),
+                               parent_task_id integer REFERENCES tasks."Tasks"(id) ON DELETE CASCADE,
+                               created_at     date DEFAULT CURRENT_TIMESTAMP,
+                               updated_at     date DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE tasks."Tasks" OWNER TO postgres;
+CREATE INDEX idx_tasks_status_id        ON tasks."Tasks" (status_id);
+CREATE INDEX idx_tasks_assignee_id      ON tasks."Tasks" (assignee_id);
+CREATE INDEX idx_tasks_creator_id       ON tasks."Tasks" (creator_id);
+CREATE INDEX idx_tasks_parent_task_id   ON tasks."Tasks" (parent_task_id);
+CREATE INDEX idx_tasks_due_date         ON tasks."Tasks" (due_date);
+CREATE INDEX idx_tasks_assignee_status  ON tasks."Tasks" (assignee_id, status_id);
+CREATE INDEX idx_tasks_creator_status   ON tasks."Tasks" (creator_id, status_id);
+CREATE INDEX idx_tasks_team_status      ON tasks."Tasks" (team_id, status_id);
+
+-- ---------------------------------------------------------
+-- Схема comments
+-- ---------------------------------------------------------
+CREATE TABLE comments."TaskComments" (
+                                         id         serial PRIMARY KEY,
+                                         task_id    integer NOT NULL REFERENCES tasks."Tasks"(id) ON DELETE CASCADE,
+                                         autor_id   integer NOT NULL REFERENCES accounts."Accounts"(id),
+                                         comment    text NOT NULL,
+                                         created_at date DEFAULT CURRENT_TIMESTAMP,
+                                         updated_at date DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE comments."TaskComments" OWNER TO postgres;
+CREATE INDEX idx_taskcomments_task_id  ON comments."TaskComments" (task_id);
+CREATE INDEX idx_taskcomments_autor_id ON comments."TaskComments" (autor_id);
+
+-- ---------------------------------------------------------
+-- Схема audit (история изменений)
+-- ---------------------------------------------------------
+CREATE TABLE audit."TaskDeadLineHistory" (
+                                             id            serial PRIMARY KEY,
+                                             task_id       integer NOT NULL REFERENCES tasks."Tasks"(id) ON DELETE CASCADE,
+                                             old_due_date  date NOT NULL,
+                                             new_due_date  date NOT NULL,
+                                             changed_by_id integer NOT NULL REFERENCES accounts."Accounts"(id),
+                                             reason        text,
+                                             changed_at    date DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE audit."TaskDeadLineHistory" OWNER TO postgres;
+CREATE INDEX idx_taskdeadlinehistory_task_id        ON audit."TaskDeadLineHistory" (task_id);
+CREATE INDEX idx_taskdeadlinehistory_changed_by_id   ON audit."TaskDeadLineHistory" (changed_by_id);
+CREATE INDEX idx_task_deadline_task_date            ON audit."TaskDeadLineHistory" (task_id ASC, changed_at DESC);
+
+CREATE TABLE audit."TaskStatusHistory" (
+                                           id            serial PRIMARY KEY,
+                                           task_id       integer NOT NULL REFERENCES tasks."Tasks"(id) ON DELETE CASCADE,
+                                           old_status_id integer NOT NULL REFERENCES statuses."Statuses"(id),
+                                           new_status_id integer NOT NULL REFERENCES statuses."Statuses"(id),
+                                           changed_by_id integer NOT NULL REFERENCES accounts."Accounts"(id),
+                                           reason        text,
+                                           changed_at    date DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE audit."TaskStatusHistory" OWNER TO postgres;
+CREATE INDEX idx_taskstatushistory_task_id       ON audit."TaskStatusHistory" (task_id);
+CREATE INDEX idx_taskstatushistory_changed_by_id  ON audit."TaskStatusHistory" (changed_by_id);
+CREATE INDEX idx_task_history_task_date          ON audit."TaskStatusHistory" (task_id ASC, changed_at DESC);
+
+-- ---------------------------------------------------------
+-- Схема tags (теги)
+-- ---------------------------------------------------------
+CREATE TABLE tags."Tags" (
+                             id         serial PRIMARY KEY,
+                             name       varchar(50) NOT NULL UNIQUE,
+                             color      varchar(7) DEFAULT '#FFFFFF'::varchar,
+                             created_at date DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE tags."Tags" OWNER TO postgres;
+
+CREATE TABLE tags."TaskTags" (
+                                 task_id integer NOT NULL REFERENCES tasks."Tasks"(id) ON DELETE CASCADE,
+                                 tag_id  integer NOT NULL REFERENCES tags."Tags"(id) ON DELETE SET NULL,
+                                 PRIMARY KEY (task_id, tag_id)
+);
+ALTER TABLE tags."TaskTags" OWNER TO postgres;
+
+-- Часть 4. Процедуры 
+
+-- Процедура UpdateTaskStatus
+CREATE OR REPLACE PROCEDURE tasks."UpdateTaskStatus"(
+    IN p_task_id integer,
+    IN p_new_status integer,
+    IN p_changed_by_id integer,
+    IN p_reason text DEFAULT NULL
+)
+    LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_old_status_id INT;
+BEGIN
+    IF NOT EXISTS (SELECT * FROM tasks."Tasks" WHERE id = p_task_id) THEN
+        RAISE EXCEPTION 'Задача с id % не найдена', p_task_id;
+    END IF;
+
+    SELECT status_id INTO v_old_status_id FROM tasks."Tasks" WHERE id = p_task_id;
+    IF v_old_status_id = p_new_status THEN
+        RAISE NOTICE 'Статус задачи % не изменился', p_task_id;
+        RETURN;
+    END IF;
+    UPDATE tasks."Tasks"
+    SET status_id = p_new_status,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_task_id;
+    INSERT INTO audit."TaskStatusHistory"(
+        task_id, old_status_id, new_status_id, changed_by_id, reason, changed_at
+    ) VALUES (
+                 p_task_id, v_old_status_id, p_new_status, p_changed_by_id, p_reason, CURRENT_TIMESTAMP
+             );
+END;
+$$;
+ALTER PROCEDURE tasks."UpdateTaskStatus"(integer, integer, integer, text) OWNER TO postgres;
+
+-- Процедура UpdateTaskDeadline
+CREATE OR REPLACE PROCEDURE tasks."UpdateTaskDeadline"(
+    IN p_task_id integer,
+    IN p_new_deadline date,
+    IN p_changed_by_id integer,
+    IN p_reason text DEFAULT NULL
+)
+    LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_old_deadline DATE;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM tasks."Tasks" WHERE id = p_task_id) THEN
+        RAISE EXCEPTION 'Задача с id % не найдена', p_task_id;
+    END IF;
+    SELECT due_date INTO v_old_deadline FROM tasks."Tasks" WHERE id = p_task_id;
+    IF v_old_deadline = p_new_deadline THEN
+        RAISE NOTICE 'Дедлайн задачи % не изменился', p_task_id;
+        RETURN;
+    END IF;
+    UPDATE tasks."Tasks"
+    SET due_date = p_new_deadline,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_task_id;
+    INSERT INTO audit."TaskDeadLineHistory"(
+        task_id, old_due_date, new_due_date, changed_by_id, reason, changed_at
+    ) VALUES (
+                 p_task_id, v_old_deadline, p_new_deadline, p_changed_by_id, p_reason, CURRENT_TIMESTAMP
+             );
+END;
+$$;
+ALTER PROCEDURE tasks."UpdateTaskDeadline"(integer, date, integer, text) OWNER TO postgres;
+
+-- Процедура UpdateTask
+CREATE OR REPLACE PROCEDURE tasks."UpdateTask"(
+    IN p_id integer,
+    IN p_title varchar DEFAULT NULL,
+    IN p_description text DEFAULT NULL,
+    IN p_status_id integer DEFAULT NULL,
+    IN p_create_date date DEFAULT NULL,
+    IN p_team_id integer DEFAULT NULL,
+    IN p_assignee_id integer DEFAULT NULL,
+    IN p_creator_id integer DEFAULT NULL,
+    IN p_due_date date DEFAULT NULL,
+    IN p_parent_task_id integer DEFAULT NULL,
+    IN p_changed_by_id integer DEFAULT NULL,
+    IN p_reason text DEFAULT NULL
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT * FROM tasks."Tasks" WHERE id = p_id) THEN
+        RAISE EXCEPTION 'Задача с id % не найдена', p_id;
+    END IF;
+    IF p_changed_by_id IS NULL THEN
+        RAISE EXCEPTION 'p_changed_by_id не может быть NULL';
+    END IF;
+    IF p_status_id IS NOT NULL THEN
+        CALL tasks."UpdateTaskStatus"(p_id, p_status_id, p_changed_by_id, p_reason);
+    END IF;
+    IF p_due_date IS NOT NULL THEN
+        CALL tasks."UpdateTaskDeadline"(p_id, p_due_date, p_changed_by_id, p_reason);
+    END IF;
+    UPDATE tasks."Tasks"
+    SET
+        title = COALESCE(p_title, title),
+        description = COALESCE(p_description, description),
+        create_date = COALESCE(p_create_date, create_date),
+        team_id = COALESCE(p_team_id, team_id),
+        assignee_id = COALESCE(p_assignee_id, assignee_id),
+        creator_id = COALESCE(p_creator_id, creator_id),
+        parent_task_id = COALESCE(p_parent_task_id, parent_task_id),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_id;
+END;
+$$;
+ALTER PROCEDURE tasks."UpdateTask"(integer, varchar, text, integer, date, integer, integer, integer, date, integer, integer, text) OWNER TO postgres;
+
+-- Процедура RemoveTask
+CREATE OR REPLACE PROCEDURE tasks."RemoveTask"(IN p_id integer)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM tasks."Tasks" WHERE parent_task_id = p_id) THEN
+        RAISE NOTICE 'Задача % имеет подзадачи. Удаление отменено.', p_id;
+        RETURN;
+    END IF;
+    DELETE FROM tasks."Tasks" WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE NOTICE 'Задача с id % не найдена', p_id;
+    END IF;
+END;
+$$;
+ALTER PROCEDURE tasks."RemoveTask"(integer) OWNER TO postgres;
+
+-- Процедура AssignTaskToAllMembers
+CREATE OR REPLACE PROCEDURE tasks."AssignTaskToAllMembers"(
+    IN p_title varchar,
+    IN p_description text,
+    IN p_team_id integer,
+    IN p_creator_id integer,
+    IN p_due_date date,
+    IN p_status_id integer DEFAULT 1
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO tasks."Tasks" (
+        title, description, status_id, due_date,
+        team_id, creator_id, assignee_id, create_date
+    )
+    SELECT
+        p_title, p_description, p_status_id, p_due_date,
+        p_team_id, p_creator_id, tm.account_id, CURRENT_DATE
+    FROM teams."TeamMembers" tm
+    WHERE tm.team_id = p_team_id AND tm.is_active = true;
+    IF NOT FOUND THEN
+        RAISE NOTICE 'В команде % нет активных участников', p_team_id;
+    END IF;
+END;
+$$;
+ALTER PROCEDURE tasks."AssignTaskToAllMembers"(varchar, text, integer, integer, date, integer) OWNER TO postgres;
+
+-- Процедура InsertTask
+CREATE OR REPLACE PROCEDURE tasks."InsertTask"(
+    IN p_title varchar,
+    IN p_description text,
+    IN p_status_id integer,
+    IN p_assignee_id integer,
+    IN p_creator_id integer,
+    IN p_team_id integer DEFAULT NULL,
+    IN p_due_date date DEFAULT NULL,
+    IN p_parent_task_id integer DEFAULT NULL
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO tasks."Tasks" (
+        title, description, status_id, due_date,
+        assignee_id, creator_id, team_id, parent_task_id, create_date
+    ) VALUES (
+                 p_title, p_description, p_status_id,
+                 COALESCE(p_due_date, CURRENT_DATE),
+                 p_assignee_id, p_creator_id, p_team_id, p_parent_task_id, CURRENT_DATE
+             );
+END;
+$$;
+ALTER PROCEDURE tasks."InsertTask"(varchar, text, integer, integer, integer, integer, date, integer) OWNER TO postgres;
+
+-- Процедура CreateSubTask
+CREATE OR REPLACE PROCEDURE tasks."CreateSubTask"(
+    IN p_parent_task_id integer,
+    IN p_title varchar,
+    IN p_description text,
+    IN p_assignee_id integer,
+    IN p_creator_id integer,
+    IN p_due_date date,
+    IN p_status integer DEFAULT 1
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO tasks."Tasks"
+    (title, description, status_id, due_date, assignee_id, creator_id,
+     parent_task_id, create_date, created_at, updated_at)
+    VALUES
+        (p_title, p_description, p_status, p_due_date,
+         p_assignee_id, p_creator_id, p_parent_task_id, CURRENT_DATE,
+         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+END;
+$$;
+ALTER PROCEDURE tasks."CreateSubTask"(integer, varchar, text, integer, integer, date, integer) OWNER TO postgres;
+
+-- Процедура AddTaskComment (в схеме comments)
+CREATE OR REPLACE PROCEDURE comments."AddTaskComment"(
+    IN p_task_id integer,
+    IN p_author_id integer,
+    IN p_comment text
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO comments."TaskComments"(task_id, autor_id, comment)
+    VALUES (p_task_id, p_author_id, p_comment);
+END;
+$$;
+ALTER PROCEDURE comments."AddTaskComment"(integer, integer, text) OWNER TO postgres;
+
+-- Процедура CreateTag (в схеме tags)
+CREATE OR REPLACE PROCEDURE tags."CreateTag"(
+    IN p_name varchar,
+    IN p_color varchar
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO tags."Tags"(name, color) VALUES (p_name, p_color);
+END;
+$$;
+ALTER PROCEDURE tags."CreateTag"(varchar, varchar) OWNER TO postgres;
+
+-- Процедура AddTagToTask (в схеме tags)
+CREATE OR REPLACE PROCEDURE tags."AddTagToTask"(
+    IN p_task_id integer,
+    IN p_tag_id integer
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO tags."TaskTags"(task_id, tag_id) VALUES (p_task_id, p_tag_id);
+END;
+$$;
+ALTER PROCEDURE tags."AddTagToTask"(integer, integer) OWNER TO postgres;
+
+-- Процедура RemoveTagFromTask (в схеме tags)
+CREATE OR REPLACE PROCEDURE tags."RemoveTagFromTask"(
+    IN p_task_id integer,
+    IN p_tag_id integer
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    DELETE FROM tags."TaskTags" WHERE task_id = p_task_id AND tag_id = p_tag_id;
+END;
+$$;
+ALTER PROCEDURE tags."RemoveTagFromTask"(integer, integer) OWNER TO postgres;
+
+-- Процедура AddUserToTeam (в схеме teams)
+CREATE OR REPLACE PROCEDURE teams."AddUserToTeam"(
+    IN p_team_id integer,
+    IN p_account_id integer,
+    IN p_added_by_id integer
+)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM teams."Teams" WHERE id = p_team_id) THEN
+        RAISE EXCEPTION 'Команда с id % не найдена', p_team_id;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM accounts."Accounts" WHERE id = p_account_id) THEN
+        RAISE EXCEPTION 'Пользователь с id % не найден', p_account_id;
+    END IF;
+    INSERT INTO teams."TeamMembers" (team_id, account_id, created_at, is_active)
+    VALUES (p_team_id, p_account_id, CURRENT_DATE, true)
+    ON CONFLICT (team_id, account_id) DO NOTHING;
+    RAISE NOTICE 'Пользователь % добавлен в команду %', p_account_id, p_team_id;
+END;
+$$;
+ALTER PROCEDURE teams."AddUserToTeam"(integer, integer, integer) OWNER TO postgres;
+
+-- Процедура RemoveUserFromTeam (в схеме teams)
+CREATE OR REPLACE PROCEDURE teams."RemoveUserFromTeam"(
+    IN p_team_id integer,
+    IN p_user_id integer
+)
+    LANGUAGE sql
+AS $$
+UPDATE teams."TeamMembers" SET is_active = FALSE
+WHERE team_id = p_team_id AND account_id = p_user_id;
+$$;
+ALTER PROCEDURE teams."RemoveUserFromTeam"(integer, integer) OWNER TO postgres;
+
+-- Процедура DeleteTeam (в схеме teams)
+CREATE OR REPLACE PROCEDURE teams."DeleteTeam"(IN p_team_id integer)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    DELETE FROM teams."TeamMembers" WHERE team_id = p_team_id;
+    DELETE FROM teams."Teams" WHERE id = p_team_id;
+END;
+$$;
+ALTER PROCEDURE teams."DeleteTeam"(integer) OWNER TO postgres;
+
+-- Процедура ClearAll (очистка всех таблиц, можно поместить в любую схему, например tasks)
+CREATE OR REPLACE PROCEDURE tasks."ClearAll"()
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    TRUNCATE TABLE audit."TaskDeadLineHistory", audit."TaskStatusHistory", comments."TaskComments",
+        tags."TaskTags", teams."TeamMembers", tasks."Tasks", tags."Tags", teams."Teams",
+        accounts."Accounts", statuses."Statuses"
+        RESTART IDENTITY CASCADE;
+    RAISE NOTICE 'Все данные очищены';
+END;
+$$;
+ALTER PROCEDURE tasks."ClearAll"() OWNER TO postgres;
+
+
+-- Часть 5. Функции (по схемам)
+
+
+-- ---------- Схема accounts ----------
+CREATE OR REPLACE FUNCTION accounts."RegisterAccount"(
+    p_login varchar,
+    p_password_hash varchar,
+    p_email varchar,
+    p_fullname text,
+    p_position varchar DEFAULT NULL
+) RETURNS integer
+    LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_result INTEGER;
+BEGIN
+    IF EXISTS (SELECT 1 FROM accounts."Accounts" WHERE login = p_login) THEN
+        RETURN 0;
+    END IF;
+    IF EXISTS (SELECT 1 FROM accounts."Accounts" WHERE email = p_email) THEN
+        RETURN -1;
+    END IF;
+    INSERT INTO accounts."Accounts" (login, password_hash, email, fullname, "position", "role", is_active)
+    VALUES (p_login, p_password_hash, p_email, p_fullname, p_position, 'User', true);
+    RETURN 1;
+END;
+$$;
+ALTER FUNCTION accounts."RegisterAccount"(varchar, varchar, varchar, text, varchar) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION accounts."AuthenticateAccount"(
+    p_login varchar,
+    p_password_hash varchar
+)
+    RETURNS TABLE(account_id integer, "role" varchar, status integer)
+    LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_account RECORD;
+BEGIN
+    SELECT a.id, a."role", a.is_active INTO v_account
+    FROM accounts."Accounts" a
+    WHERE a.login = p_login AND a.password_hash = p_password_hash;
+
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT NULL::INT, NULL::VARCHAR, 0;
+        RETURN;
+    END IF;
+    IF v_account.is_active = false THEN
+        RETURN QUERY SELECT v_account.id, v_account."role", -1;
+        RETURN;
+    END IF;
+    RETURN QUERY SELECT v_account.id, v_account."role", 1;
+END;
+$$;
+ALTER FUNCTION accounts."AuthenticateAccount"(varchar, varchar) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION accounts."GetAccountById"(p_id integer)
+    RETURNS TABLE(id integer, login varchar, password_hash varchar, email varchar,
+                  fullname text, "position" varchar, "role" varchar, created_at date, is_active boolean)
+    LANGUAGE sql
+AS $$
+SELECT id, login, password_hash, email, fullname, "position", "role", created_at, is_active
+FROM accounts."Accounts"
+WHERE id = p_id;
+$$;
+ALTER FUNCTION accounts."GetAccountById"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION accounts."GetAllUsers"()
+    RETURNS TABLE(id integer, login varchar, fullname text, "role" varchar,
+                  is_active boolean, email varchar, "position" varchar)
+    LANGUAGE sql
+AS $$
+SELECT id, login, fullname, "role", is_active, email, "position"
+FROM accounts."Accounts" ORDER BY id;
+$$;
+ALTER FUNCTION accounts."GetAllUsers"() OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION accounts."GetUserStats"(p_user_id integer)
+    RETURNS TABLE(total_tasks bigint, completed_tasks bigint, overdue_tasks bigint)
+    LANGUAGE plpgsql
+AS $$
+DECLARE
+    accepted_status_id INTEGER;
+BEGIN
+    SELECT id INTO accepted_status_id FROM statuses."Statuses" WHERE name = 'Принята' LIMIT 1;
+    IF accepted_status_id IS NULL THEN
+        RETURN QUERY SELECT 0::BIGINT, 0::BIGINT, 0::BIGINT;
+        RETURN;
+    END IF;
+    RETURN QUERY
+        SELECT
+            COUNT(*)::BIGINT AS total_tasks,
+            COUNT(*) FILTER (WHERE t.status_id = accepted_status_id)::BIGINT AS completed_tasks,
+            COUNT(*) FILTER (WHERE t.due_date < CURRENT_DATE AND t.status_id != accepted_status_id)::BIGINT AS overdue_tasks
+        FROM tasks."Tasks" t
+        WHERE t.assignee_id = p_user_id;
+END;
+$$;
+ALTER FUNCTION accounts."GetUserStats"(integer) OWNER TO postgres;
+
+-- ---------- Схема tasks ----------
+CREATE OR REPLACE FUNCTION tasks."GetUserTasks"(p_account_id integer)
+    RETURNS TABLE(id integer, title varchar, status_name varchar, due_date date, is_personal boolean)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT t.id, t.title, s.name AS status_name, t.due_date, TRUE AS is_personal
+        FROM tasks."Tasks" t
+                 JOIN statuses."Statuses" s ON t.status_id = s.id
+        WHERE t.assignee_id = p_account_id
+        UNION
+        SELECT t.id, t.title, s.name AS status_name, t.due_date, FALSE AS is_personal
+        FROM tasks."Tasks" t
+                 JOIN statuses."Statuses" s ON t.status_id = s.id
+                 JOIN teams."TeamMembers" tm ON t.team_id = tm.team_id
+        WHERE tm.account_id = p_account_id AND t.assignee_id IS NULL;
+END;
+$$;
+ALTER FUNCTION tasks."GetUserTasks"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tasks."GetTaskDetails"(p_task_id integer)
+    RETURNS TABLE(id integer, title varchar, description text, due_date date,
+                  status_name varchar, creator_fullname varchar)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT t.id::INT, t.title::VARCHAR(200), t.description::TEXT, t.due_date::DATE,
+               s.name::VARCHAR(50) AS status_name, a.fullname::VARCHAR(150) AS creator_fullname
+        FROM tasks."Tasks" t
+                 JOIN statuses."Statuses" s ON t.status_id = s.id
+                 JOIN accounts."Accounts" a ON t.creator_id = a.id
+        WHERE t.id = p_task_id;
+END;
+$$;
+ALTER FUNCTION tasks."GetTaskDetails"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tasks."GetTaskSubtasks"(p_parent_task_id integer)
+    RETURNS TABLE(id integer, title varchar, status_name varchar, due_date date)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT t.id, t.title, s.name AS status_name, t.due_date
+        FROM tasks."Tasks" t
+                 JOIN statuses."Statuses" s ON t.status_id = s.id
+        WHERE t.parent_task_id = p_parent_task_id
+        ORDER BY t.id;
+END;
+$$;
+ALTER FUNCTION tasks."GetTaskSubtasks"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tasks."GetUserCreatedTasks"(p_creator_id integer)
+    RETURNS TABLE(id integer, title varchar, description text, due_date date,
+                  status_name varchar, assignee_name text)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT t.id, t.title, t.description, t.due_date,
+               s.name AS status_name, a.fullname AS assignee_name
+        FROM tasks."Tasks" t
+                 JOIN statuses."Statuses" s ON t.status_id = s.id
+                 LEFT JOIN accounts."Accounts" a ON t.assignee_id = a.id
+        WHERE t.creator_id = p_creator_id
+        ORDER BY t.due_date;
+END;
+$$;
+ALTER FUNCTION tasks."GetUserCreatedTasks"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tasks."GetTasksByStatus"(p_status_id integer)
+    RETURNS TABLE(id integer, title varchar, assignee_name text, due_date date)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT t.id, t.title, a.fullname, t.due_date
+        FROM tasks."Tasks" t
+                 LEFT JOIN accounts."Accounts" a ON t.assignee_id = a.id
+        WHERE t.status_id = p_status_id;
+END;
+$$;
+ALTER FUNCTION tasks."GetTasksByStatus"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tasks."GetTaskOwners"(p_task_id integer)
+    RETURNS TABLE(creator_id integer, assignee_id integer)
+    LANGUAGE sql
+AS $$
+SELECT creator_id, assignee_id FROM tasks."Tasks" WHERE id = p_task_id;
+$$;
+ALTER FUNCTION tasks."GetTaskOwners"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tasks."CopyTask"(
+    p_task_id integer,
+    p_new_creator_id integer,
+    p_new_assignee_id integer,
+    p_copy_subtasks boolean
+) RETURNS integer
+    LANGUAGE plpgsql
+AS $$
+DECLARE
+    new_task_id INTEGER;
+    subtask RECORD;
+BEGIN
+    INSERT INTO tasks."Tasks" (
+        title, description, status_id, create_date, due_date,
+        team_id, assignee_id, creator_id, parent_task_id, created_at, updated_at
+    )
+    SELECT
+        title, description, status_id, CURRENT_DATE, due_date,
+        team_id, p_new_assignee_id, p_new_creator_id, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    FROM tasks."Tasks"
+    WHERE id = p_task_id
+    RETURNING id INTO new_task_id;
+
+    IF p_copy_subtasks THEN
+        FOR subtask IN
+            SELECT id FROM tasks."Tasks" WHERE parent_task_id = p_task_id
+            LOOP
+                PERFORM tasks."CopyTask"(subtask.id, p_new_creator_id, p_new_assignee_id, true);
+                UPDATE tasks."Tasks" SET parent_task_id = new_task_id
+                WHERE parent_task_id = p_task_id
+                  AND id = (SELECT max(id) FROM tasks."Tasks"
+                            WHERE title = (SELECT title FROM tasks."Tasks" WHERE id = subtask.id)
+                            ORDER BY id DESC LIMIT 1);
+            END LOOP;
+    END IF;
+    RETURN new_task_id;
+END;
+$$;
+ALTER FUNCTION tasks."CopyTask"(integer, integer, integer, boolean) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tasks."GetOverdueTasks"(p_account_id integer DEFAULT NULL)
+    RETURNS TABLE(id integer, title varchar, description text, due_date date,
+                  status_name varchar, assignee_name text, overdue_days integer)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT t.id, t.title, t.description, t.due_date,
+               s.name AS status_name, a.fullname AS assignee_name,
+               (CURRENT_DATE - t.due_date)::INTEGER AS overdue_days
+        FROM tasks."Tasks" t
+                 JOIN statuses."Statuses" s ON t.status_id = s.id
+                 LEFT JOIN accounts."Accounts" a ON t.assignee_id = a.id
+        WHERE t.due_date < CURRENT_DATE
+          AND s.name != 'Принята'
+          AND (p_account_id IS NULL OR t.assignee_id = p_account_id)
+        ORDER BY t.due_date;
+END;
+$$;
+ALTER FUNCTION tasks."GetOverdueTasks"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tasks."SearchTasks"(
+    p_query text,
+    p_user_id integer,
+    p_role varchar
+)
+    RETURNS TABLE(id integer, title varchar, description text, due_date date,
+                  status_name varchar, assignee_name text, relevance real)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT
+            t.id, t.title, t.description, t.due_date,
+            s.name AS status_name, a.fullname AS assignee_name,
+            (similarity(t.title, p_query) + similarity(COALESCE(t.description, ''), p_query))::REAL AS relevance
+        FROM tasks."Tasks" t
+                 JOIN statuses."Statuses" s ON t.status_id = s.id
+                 LEFT JOIN accounts."Accounts" a ON t.assignee_id = a.id
+        WHERE
+            (t.title ILIKE '%' || p_query || '%' OR t.description ILIKE '%' || p_query || '%')
+          AND (
+            p_role = 'Admin'
+                OR (p_role = 'TeamLead' AND (t.creator_id = p_user_id OR t.assignee_id = p_user_id))
+                OR (p_role = 'User' AND t.assignee_id = p_user_id)
+            )
+        ORDER BY relevance DESC;
+END;
+$$;
+ALTER FUNCTION tasks."SearchTasks"(text, integer, varchar) OWNER TO postgres;
+
+-- ---------- Схема comments ----------
+CREATE OR REPLACE FUNCTION comments."GetTaskComments"(p_task_id integer)
+    RETURNS TABLE(id integer, author_name text, comment text, created_at date)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT c.id, a.fullname, c.comment, c.created_at
+        FROM comments."TaskComments" c
+                 JOIN accounts."Accounts" a ON c.autor_id = a.id
+        WHERE c.task_id = p_task_id;
+END;
+$$;
+ALTER FUNCTION comments."GetTaskComments"(integer) OWNER TO postgres;
+
+-- ---------- Схема teams ----------
+CREATE OR REPLACE FUNCTION teams."GetUserTeam"(p_account_id integer)
+    RETURNS TABLE(id integer, name varchar, description text, team_lead_id integer, created_at date)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT t.id, t.name, t.description, t.team_lead_id, t.created_at
+        FROM teams."Teams" t
+                 JOIN teams."TeamMembers" tm ON t.id = tm.team_id
+        WHERE tm.account_id = p_account_id AND tm.is_active = TRUE
+        LIMIT 1;
+END;
+$$;
+ALTER FUNCTION teams."GetUserTeam"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION teams."IsUserTeamLead"(p_account_id integer, p_team_id integer)
+    RETURNS boolean
+    LANGUAGE sql
+AS $$
+SELECT EXISTS (SELECT 1 FROM teams."Teams" WHERE id = p_team_id AND team_lead_id = p_account_id);
+$$;
+ALTER FUNCTION teams."IsUserTeamLead"(integer, integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION teams."GetUserLeadTeams"(p_account_id integer)
+    RETURNS TABLE(id integer, name varchar, description text, team_lead_id integer, created_at date)
+    LANGUAGE sql
+AS $$
+SELECT id, name, description, team_lead_id, created_at FROM teams."Teams" WHERE team_lead_id = p_account_id;
+$$;
+ALTER FUNCTION teams."GetUserLeadTeams"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION teams."GetAllTeams"()
+    RETURNS TABLE(id integer, name varchar, description text, team_lead_id integer, created_at date)
+    LANGUAGE sql
+AS $$
+SELECT id, name, description, team_lead_id, created_at FROM teams."Teams" ORDER BY id;
+$$;
+ALTER FUNCTION teams."GetAllTeams"() OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION teams."GetTeamMembers"(p_team_id integer)
+    RETURNS TABLE(account_id integer, login varchar, fullname text, "role" varchar, joined_at date)
+    LANGUAGE sql
+AS $$
+SELECT a.id, a.login, a.fullname, a."role", tm.created_at
+FROM teams."TeamMembers" tm
+         JOIN accounts."Accounts" a ON tm.account_id = a.id
+WHERE tm.team_id = p_team_id AND tm.is_active = TRUE
+ORDER BY a.fullname;
+$$;
+ALTER FUNCTION teams."GetTeamMembers"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION teams."GetUserTeams"(p_user_id integer)
+    RETURNS TABLE(id integer, name varchar, description text, team_lead_id integer, joined_at date)
+    LANGUAGE sql
+AS $$
+SELECT t.id, t.name, t.description, t.team_lead_id, tm.created_at
+FROM teams."Teams" t
+         JOIN teams."TeamMembers" tm ON t.id = tm.team_id
+WHERE tm.account_id = p_user_id AND tm.is_active = TRUE;
+$$;
+ALTER FUNCTION teams."GetUserTeams"(integer) OWNER TO postgres;
+
+-- ---------- Схема statuses ----------
+CREATE OR REPLACE FUNCTION statuses."GetAvailableStatuses"()
+    RETURNS TABLE(id integer, name varchar, code varchar, description text, sort_order integer)
+    LANGUAGE sql
+AS $$
+SELECT id, name, code, description, sort_order
+FROM statuses."Statuses"
+ORDER BY sort_order;
+$$;
+ALTER FUNCTION statuses."GetAvailableStatuses"() OWNER TO postgres;
+
+-- ---------- Схема audit ----------
+CREATE OR REPLACE FUNCTION audit."GetTaskStatusHistory"(p_task_id integer)
+    RETURNS TABLE(old_status varchar, new_status varchar, changed_by text, reason text, changed_at date)
+    LANGUAGE sql
+AS $$
+SELECT os.name AS old_status, ns.name AS new_status, a.fullname AS changed_by, h.reason, h.changed_at
+FROM audit."TaskStatusHistory" h
+         JOIN statuses."Statuses" os ON h.old_status_id = os.id
+         JOIN statuses."Statuses" ns ON h.new_status_id = ns.id
+         JOIN accounts."Accounts" a ON h.changed_by_id = a.id
+WHERE h.task_id = p_task_id
+ORDER BY h.changed_at DESC;
+$$;
+ALTER FUNCTION audit."GetTaskStatusHistory"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION audit."GetTaskDeadlineHistory"(p_task_id integer)
+    RETURNS TABLE(old_due_date date, new_due_date date, changed_by text, reason text, changed_at date)
+    LANGUAGE sql
+AS $$
+SELECT h.old_due_date, h.new_due_date, a.fullname AS changed_by, h.reason, h.changed_at
+FROM audit."TaskDeadLineHistory" h
+         JOIN accounts."Accounts" a ON h.changed_by_id = a.id
+WHERE h.task_id = p_task_id
+ORDER BY h.changed_at DESC;
+$$;
+ALTER FUNCTION audit."GetTaskDeadlineHistory"(integer) OWNER TO postgres;
+
+-- ---------- Схема tags ----------
+CREATE OR REPLACE FUNCTION tags."GetTaskTags"(p_task_id integer)
+    RETURNS TABLE(id integer, name varchar, color varchar)
+    LANGUAGE sql
+AS $$
+SELECT t.id, t.name, t.color
+FROM tags."Tags" t
+         JOIN tags."TaskTags" tt ON t.id = tt.tag_id
+WHERE tt.task_id = p_task_id;
+$$;
+ALTER FUNCTION tags."GetTaskTags"(integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION tags."GetTasksByTag"(p_tag_id integer)
+    RETURNS TABLE(id integer, title varchar, description text, due_date date,
+                  status_name varchar, assignee_name text)
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT t.id, t.title, t.description, t.due_date,
+               s.name AS status_name, a.fullname AS assignee_name
+        FROM tasks."Tasks" t
+                 JOIN tags."TaskTags" tt ON t.id = tt.task_id
+                 JOIN statuses."Statuses" s ON t.status_id = s.id
+                 LEFT JOIN accounts."Accounts" a ON t.assignee_id = a.id
+        WHERE tt.tag_id = p_tag_id
+        ORDER BY t.due_date;
+END;
+$$;
+ALTER FUNCTION tags."GetTasksByTag"(integer) OWNER TO postgres;
+
+-- Конец скрипта. База данных полностью создана.

@@ -17,7 +17,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 -- .....................................................................
 -- ТАБЛИЦЫ
 -- .....................................................................
-
+Asdf=1234Asdf=1234
 -- 1. Accounts
 CREATE TABLE "Accounts" (
     id            serial PRIMARY KEY,
