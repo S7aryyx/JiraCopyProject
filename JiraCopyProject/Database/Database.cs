@@ -5,7 +5,7 @@ namespace JiraCopyProject.Database
 {
     public static class Database
     {
-        private static string connectionString = "Host=46.191.235.28;Port=5432;Database=jiracopy;Username=postgres;Password=1111";
+        private static string connectionString = "Host=46.191.235.28;Port=5432;Database=JiraCopy_pt2;Username=postgres;Password=1111";
 
         public static NpgsqlConnection GetConnection()
         {
@@ -33,7 +33,7 @@ namespace JiraCopyProject.Database
             {
                 if (parameters != null)
                     cmd.Parameters.AddRange(parameters);
-                conn.Open();
+                conn.Open();            
                 return cmd.ExecuteScalar();
             }
         }

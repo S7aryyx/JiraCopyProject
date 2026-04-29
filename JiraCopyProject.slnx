@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="JiraCopyProject.WinForms/JiraCopyProject.WinForms.csproj" Id="12421570-f6f1-4233-9a7d-b260360db2ea" />
   <Project Path="JiraCopyProject/JiraCopyProject.csproj" />
 </Solution>

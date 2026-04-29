@@ -11,7 +11,7 @@ namespace JiraCopyProject.Logic.Services
         public static int Register(string login, string clearPassword, string email, string fullname, string position)
         {
             string hash = BCrypt.Net.BCrypt.HashPassword(clearPassword);
-            string sql = "SELECT \"RegisterAccount\"(@login, @hash, @email, @fullname, @position)";
+            string sql = "SELECT accounts.\"RegisterAccount\"(@login, @hash, @email, @fullname, @position)";
             var parameters = new[]
             {
                 new NpgsqlParameter("@login", login),
@@ -23,9 +23,10 @@ namespace JiraCopyProject.Logic.Services
             object result = Database.Database.ExecuteScalar(sql, parameters);
             return result == null ? 0 : Convert.ToInt32(result);
         }
+
         public static (int Id, string Role, int Status) Authenticate(string login, string clearPassword)
         {
-            string sql = "SELECT id, password_hash, role, is_active FROM \"Accounts\" WHERE login = @login";
+            string sql = "SELECT id, password_hash, role, is_active FROM accounts.\"Accounts\" WHERE login = @login";
             var param = new NpgsqlParameter("@login", login);
             DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
             if (dt.Rows.Count == 0)
@@ -44,12 +45,12 @@ namespace JiraCopyProject.Logic.Services
             {
                 return (0, "", 0);
             }
-
             return (Convert.ToInt32(row["id"]), row["role"].ToString(), 1);
         }
+
         public static Account GetAccountById(int id)
         {
-            string sql = "SELECT * FROM \"GetAccountById\"(@p_id)";
+            string sql = "SELECT * FROM accounts.\"GetAccountById\"(@p_id)";
             var param = new NpgsqlParameter("@p_id", id);
             DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
             if (dt.Rows.Count == 0) return null;
@@ -69,13 +70,15 @@ namespace JiraCopyProject.Logic.Services
                 Convert.ToBoolean(row["is_active"])
             );
         }
+
         public static DataTable GetAllUsers()
         {
-            return Database.Database.ExecuteQuery("SELECT * FROM \"GetAllUsers\"()");
+            return Database.Database.ExecuteQuery("SELECT * FROM accounts.\"GetAllUsers\"()");
         }
+
         public static (long Total, long Completed, long Overdue) GetUserStats(int userId)
         {
-            string sql = "SELECT * FROM \"GetUserStats\"(@p_user_id)";
+            string sql = "SELECT * FROM accounts.\"GetUserStats\"(@p_user_id)";
             var param = new NpgsqlParameter("@p_user_id", userId);
             DataTable dt = Database.Database.ExecuteQuery(sql, new[] { param });
             if (dt.Rows.Count == 0) return (0, 0, 0);
