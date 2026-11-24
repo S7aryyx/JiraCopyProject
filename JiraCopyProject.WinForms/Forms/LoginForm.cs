@@ -1,4 +1,4 @@
-﻿using JiraCopyProject.Database;
+using JiraCopyProject.Database;
 using JiraCopyProject.Logic.Models;
 using JiraCopyProject.Logic.Services;
 using JiraCopyProject.WinForms.Helpers;
@@ -88,7 +88,7 @@ namespace JiraCopyProject.WinForms.Forms
         {
             RegisterForm registerForm = new RegisterForm();
             registerForm.ShowDialog();
-            this.Hide();
+            // The login window remains visible after the registration dialog closes.
         }
 
         private void ShowError(string message)

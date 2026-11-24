@@ -1,10 +1,7 @@
--- Создание базы данных JiraCopy_pt2 с разделением на схемы
-
-
--- Часть 1. Создание базы данных
---CREATE DATABASE "JiraCopy_pt2"
---    WITH OWNER = postgres;
-    
+-- JiraData: схема приложения JiraCopyProject
+-- Выполнять ПОСЛЕ создания базы данных JiraData и подключения к ней.
+-- Скрипт рассчитан на первичную установку в пустой базе.
+-- Требуется роль PostgreSQL postgres (скрипт назначает владельцев объектов postgres).
 
 -- Часть 2. Создание схем
 CREATE SCHEMA IF NOT EXISTS accounts;
@@ -31,7 +28,8 @@ CREATE TABLE accounts."Accounts" (
                                      email         varchar(150) NOT NULL UNIQUE,
                                      fullname      text NOT NULL,
                                      "position"    varchar(100),
-                                     "role"        varchar(20),
+                                     "role"        varchar(20) NOT NULL DEFAULT 'User'
+                                         CHECK ("role" IN ('Admin', 'TeamLead', 'User')),
                                      created_at    date DEFAULT CURRENT_TIMESTAMP,
                                      is_active     boolean DEFAULT true
 );
@@ -937,5 +935,3 @@ BEGIN
 END;
 $$;
 ALTER FUNCTION tags."GetTasksByTag"(integer) OWNER TO postgres;
-
--- Конец скрипта. База данных полностью создана.
