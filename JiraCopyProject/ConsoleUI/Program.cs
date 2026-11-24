@@ -108,7 +108,6 @@ namespace JiraCopyProject
             Console.WriteLine("======================================");
             Console.Write("Ваш выбор: ");
         }
-
         static void ShowUserMenu()
         {
             Console.WriteLine("============================================================");
@@ -210,7 +209,7 @@ namespace JiraCopyProject
 
                 string userSql = @"
                     SELECT id, login, password_hash, email, fullname, position, role, created_at, is_active 
-                    FROM ""Accounts"" 
+                    FROM accounts.""Accounts"" 
                     WHERE id = @id";
 
                 var userParams = new[] { new NpgsqlParameter("@id", id) };
@@ -606,7 +605,7 @@ namespace JiraCopyProject
             string email = Console.ReadLine()?.Trim();
             if (string.IsNullOrEmpty(email)) return;
 
-            string findUserSql = "SELECT id, login, fullname FROM \"Accounts\" WHERE email = @email AND is_active = true";
+            string findUserSql = "SELECT id, login, fullname FROM accounts.\"Accounts\" WHERE email = @email AND is_active = true";
             DataTable userDt = Database.Database.ExecuteQuery(findUserSql, new[] { new NpgsqlParameter("@email", email) });
 
             if (userDt.Rows.Count == 0)
